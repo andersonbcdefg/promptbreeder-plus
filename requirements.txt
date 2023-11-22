@@ -1,0 +1,10 @@
+aiohttp
+tiktoken
+tqdm
+xxhash
+onnxruntime
+transformers
+huggingface_hub
+numpy
+python-dotenv
+rich
