@@ -3,7 +3,7 @@
 
 # logs and data
 logs/
-data/
+data/train/mmlu.csv
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
