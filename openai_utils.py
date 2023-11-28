@@ -78,31 +78,30 @@ class APIModel:
     api_key_env_var: str
     request_timeout: int
 
-
 tokenizer = tiktoken.encoding_for_model("gpt-3.5-turbo")
 GPT3_TURBO = APIModel(
     name="gpt-3.5-turbo-1106",
     api_base="https://api.openai.com/v1",
     api_key_env_var="OPENAI_API_KEY",
-    request_timeout=30,
+    request_timeout=20,
 )
 GPT4_TURBO = APIModel(
     name="gpt-4-1106-preview",
     api_base="https://api.openai.com/v1",
     api_key_env_var="OPENAI_API_KEY",
-    request_timeout=30,
+    request_timeout=45,
 )
 GPT4 = APIModel(
     name="gpt-4",
     api_base="https://api.openai.com/v1",
     api_key_env_var="OPENAI_API_KEY",
-    request_timeout=180,
+    request_timeout=45,
 )
 MISTRAL = APIModel(
     name="mistralai/Mistral-7B-Instruct-v0.1",
     api_base="https://api.endpoints.anyscale.com/v1",
     api_key_env_var="ANYSCALE_API_KEY",
-    request_timeout=60,
+    request_timeout=45,
 )
 
 
@@ -174,11 +173,31 @@ class APIRequest:
                     headers=self.request_header,
                     json=self.request_json,
                 ) as response:
-                    try:
-                        response = await response.json()
-                    except Exception as e:
-                        logger.error(f"Exception parsing response: {e}")
-                        raise e
+                    # make sure it's a 200-level status code
+                    if response.status >= 200 and response.status < 300:
+                        try:
+                            # # get response mimetype
+                            # 
+                            # # if not json, print the response, this is unexpected
+                            # if "json" not in mimetype:
+                            #     logger.error(f"Response with unexpected mimetype... status code {response.status}")
+                            #     logger.error(f"Mimetype: {mimetype}, Task id: {self.task_id}, input was {self.messages}")
+                            #     logger.error(f"Got response: {await response.text()}")
+                            #     raise Exception("Unexpected mimetype")
+                            response = await response.json()
+                        except Exception as e:
+                            logger.error(f"Exception parsing response: {e}")
+                            raise e
+                    else:
+                        mimetype = response.headers["Content-Type"]
+                        if "json" in mimetype:
+                            response = await response.json()
+                            logger.log_to_file(f"Error response: {json.dumps(response)}")
+                        else:
+                            text = await response.text()
+                            response = {"error": {"message": text, "status_code": response.status}}
+                            logger.log_to_file(f"Error response: {response}")
+
             if "error" in response:
                 logger.log_to_file(f"'error' key in response: {json.dumps(response)}")
                 if "Rate limit" in response["error"].get("message", ""):
@@ -237,7 +256,7 @@ async def process_api_requests_from_list(
     """Processes API requests in parallel, throttling to stay under rate limits."""
     # constants
     seconds_to_pause_after_rate_limit_error = 15
-    seconds_to_sleep_each_loop = 0.05  # so concurrent tasks can run
+    seconds_to_sleep_each_loop = 0.01  # so concurrent tasks can run
 
     # initialize trackers
     queue_of_requests_to_retry = asyncio.Queue()
@@ -377,7 +396,7 @@ def run_chat_queries(
     model_name: Literal["gpt-3.5-turbo", "gpt-4-turbo", "gpt4", "mistral"] = None,
     callback: Optional[Callable] = None,  # should take in (id, messages, response)
     max_new_tokens: Optional[int] = None,
-    max_attempts: int = 3,
+    max_attempts: int = 5,
     cache_file: str = None,
     show_progress: bool = False,
 ):
@@ -440,7 +459,7 @@ async def run_chat_queries_async(
     model_name: Literal["gpt-3.5-turbo", "gpt-4-turbo", "gpt4", "mistral"] = None,
     callback: Optional[Callable] = None,  # should take in (id, messages, response)
     max_new_tokens: Optional[int] = None,
-    max_attempts: int = 3,
+    max_attempts: int = 5,
     cache_file: str = None,
     show_progress: bool = False,
 ):
@@ -569,7 +588,7 @@ def get_completion_simple(
         model_name=model_name,
         cache_file=None,
         max_new_tokens=max_new_tokens,
-        max_attempts=3,
+        max_attempts=5,
         show_progress=False,
     )[0]
 
@@ -593,7 +612,7 @@ async def get_completion_simple_async(
         model_name=model_name,
         cache_file=None,
         max_new_tokens=max_new_tokens,
-        max_attempts=3,
+        max_attempts=5,
         show_progress=False,
     )
     return result[0]

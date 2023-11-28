@@ -1,0 +1,9 @@
+experiment_name: mmlu_test
+task_name: mmlu
+model_name: gpt-3.5-turbo
+generations: 8
+population_size: 16
+num_scoring_samples: 32
+num_final_scoring_samples: 100
+random_seed: 22
+oversample_factor: 4

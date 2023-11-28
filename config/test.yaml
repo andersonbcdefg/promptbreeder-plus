@@ -1,6 +1,9 @@
+experiment_name: test_6
 task_name: gsm8k
 model_name: gpt-3.5-turbo
 generations: 12
-population_size: 30
-num_scoring_samples: 20
+population_size: 32
+num_scoring_samples: 40
+num_final_scoring_samples: 200
 random_seed: 22
+oversample_factor: 4
