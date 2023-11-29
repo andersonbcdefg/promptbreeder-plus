@@ -342,14 +342,29 @@ async def run_task(
         num_samples, random_state=seed
     )
     use_json_mode = task.grade_fn.__name__ == "grade_json" and "turbo" in model
-    if use_json_mode:
-        print("Using JSON mode!")
     queries = []
     for prompt in prompts:
         for inp in df[task.input_column]:
             messages = []
             if use_json_mode:
-                messages.append({"role": "system", "content": 'Respond only with JSON. Your answer should always go last, and be in the "answer" field. Other fields can be used beforehand for context/reasoning.'})
+                messages.append({
+                    "role": "system", 
+                    "content": (
+                        'You must respond to every message with only JSON. '
+                        'The JSON should have up to 2 keys: "reasoning" and "answer". '
+                        'The "reasoning" field is optional, and goes first. It can contain any step-by-step thinking, '
+                        'context, qualifiers, etc. that you want to provide. If not applicable, omit it. '
+                        'The "answer" field is required. It should contain only your answer, '
+                        'which must be a primitive type, not a JSON object. The "answer" field should be last.\n\n'
+                        'Example 1:\n{\n\t"reasoning": "6 mice + 7 mice = 13 mice, and each mice has 3 pieces of cheese, so that is '
+                        '13 mice * 3 pieces of cheese = 39 pieces of cheese",\n\t"answer": "39"\n}\n\n'
+                        'Example 2:\n{\n\t"answer": "A"\n}\n\n'
+                        'Example 3:\n{\n\t"reasoning": "The capital of France is Paris, and the Colosseum is in Rome, not Paris. '
+                        'Therefore, the answer is B. False.",\n\t"answer": "B"\n}\n\n'
+                        'Example 4:\n{\n\t"reasoning": "The comment uses offensive language, therefore it is toxic.",'
+                        '\n\t"answer": "toxic"\n}\n\n'
+                        'Example 5:\n{\n\t"answer": "helpful"\n}\n\n'
+                    )})
             messages.append({"role": "user", "content": "INSTRUCTION: " + prompt + "\n\nTASK: " + inp})
             queries.append(messages)
 
@@ -383,6 +398,8 @@ async def run_task(
     negative_exemplars = []
     for i, prompt in enumerate(prompts):
         inputs = df[task.input_column].tolist()
+        model_outputs = responses[i]
+        gold_outputs = df[task.output_column].tolist()
         score, grades = await task.grade_fn(
             inputs=df[task.input_column].tolist(),
             model_outputs=responses[i],
@@ -391,20 +408,25 @@ async def run_task(
             if task.negative_column
             else None,
         )
-        # if grades are binary, correct answers are positive exemplars and incorrect answers are negative exemplars
-        if len(set(grades)) <= 2:
-            for inp, model_output, grade in zip(inputs, responses[i], grades):
+
+        for inp, model_output, gold_output, grade in zip(inputs, model_outputs, gold_outputs, grades):
+            exemplar = {
+                "input": inp,
+                "prompt": prompt,
+                "output": model_output,
+                "gold_answer": gold_output,
+                "grade": grade
+            }
+            if len(set(grades)) <= 2:
                 if grade == 1:
-                    positive_exemplars.append({"input": inp, "prompt": prompt, "output": model_output, "grade": grade})
+                    positive_exemplars.append(exemplar)
                 else:
-                    negative_exemplars.append({"input": inp, "prompt": prompt, "output": model_output, "grade": grade})
-        # otherwise, the top 5% of grades are positive exemplars and the bottom 5% are negative exemplars
-        else:
-            for inp, model_output, grade in zip(inputs, responses[i], grades):
+                    negative_exemplars.append(exemplar)
+            else:
                 if grade >= np.percentile(grades, 95):
-                    positive_exemplars.append({"input": inp, "prompt": prompt, "output": model_output, "grade": grade})
+                    positive_exemplars.append(exemplar)
                 elif grade <= np.percentile(grades, 5):
-                    negative_exemplars.append({"input": inp, "prompt": prompt, "output": model_output, "grade": grade})
+                    negative_exemplars.append(exemplar)
 
         scored_prompts[prompt] = score
 

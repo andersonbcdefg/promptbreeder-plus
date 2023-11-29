@@ -60,6 +60,11 @@ class PromptBreederConfig:
         if self.diversity_factor and not self.use_heuristic_model:
             logger.warning("Diversity factor is set, but heuristic model is not being used. Diversity will be ignored.")
 
+    def to_dict(self):
+        d = {k: v for k, v in self.__dict__.items() if not k.startswith("_") and k != "task"}
+        d["task"] = self.task.name
+        return d
+
 @dataclass
 class ExperimentTracker:
     """
@@ -70,8 +75,21 @@ class ExperimentTracker:
     scoring_model: Optional[ScoringModel] = None
     generations: list[Generation] = field(default_factory=list)
     scored_prompts: list[dict] = field(default_factory=list)
+    final_prompts: list[dict] = field(default_factory=list)
     positive_exemplars: list[dict] = field(default_factory=list)
     negative_exemplars: list[dict] = field(default_factory=list)
+
+    def save(self, file_name: str):
+        obj = {}
+        obj["config"] = self.config.to_dict()
+        obj["final_prompts"] = self.final_prompts
+        obj["generations"] = [g.to_dict() for g in self.generations]
+        obj["scored_prompts"] = self.scored_prompts
+        obj["positive_exemplars"] = self.positive_exemplars
+        obj["negative_exemplars"] = self.negative_exemplars
+
+        with open(file_name, "w") as f:
+            json.dump(obj, f, indent=2)
 
 async def calibrate_model(
     tracker: ExperimentTracker,
@@ -112,7 +130,7 @@ async def calibrate_model(
             lineage=[],
         )
         print("Scoring calibration prompts...")
-        await score_generation(
+        result = await score_generation(
             calibration_generation,
             task,
             num_samples=8,
@@ -121,8 +139,14 @@ async def calibrate_model(
         )
 
         tracker.generations.append(copy.deepcopy(calibration_generation))
+        tracker.positive_exemplars.extend(result["positive_exemplars"])
+        tracker.negative_exemplars.extend(result["negative_exemplars"])
+        tracker.scored_prompts.extend([
+            {"prompt": p, "score": s} for p, s in result["scored_prompts"].items()    
+        ])
         tracker.scoring_model.update(calibration_generation.units, log_dir=f"logs/{tracker.config.experiment_name}", status=status)
         assert tracker.scoring_model.Xs is not None, "Xs should not be None after calibration"
+        tracker.save(f"logs/{tracker.config.experiment_name}/experiment.json")
 
 async def initialize(
     config: PromptBreederConfig,
@@ -228,13 +252,18 @@ async def run_promptbreeder(
         current_generation = initial_generation
         for i in range(config.generations):
             status.update(f"Scoring generation {i}...")
-            await score_generation(
+            result = await score_generation(
                 current_generation,
                 task,
                 num_samples=config.num_scoring_samples,
                 model_name=config.model_name,
                 status=status,
             )
+            tracker.positive_exemplars.extend(result["positive_exemplars"])
+            tracker.negative_exemplars.extend(result["negative_exemplars"])
+            tracker.scored_prompts.extend([
+                {"prompt": p, "score": s} for p, s in result["scored_prompts"].items()    
+            ])
             tracker.generations.append(copy.deepcopy(current_generation))
             print(f"=== GENERATION {i} ===")
             print(f"Best score: {max([u.fitness for u in current_generation.units]):.3f}")
@@ -243,7 +272,7 @@ async def run_promptbreeder(
                 metrics = tracker.scoring_model.update(current_generation.units, log_dir=f"logs/{config.experiment_name}", status=status)
                 if metrics is not None:
                     logger.info(f"Metrics: {metrics}")
-            current_generation.save_to_file(f"logs/{config.experiment_name}/gen_{i}.json")
+            tracker.save(f"logs/{config.experiment_name}/experiment.json")
             status.update(f"Evolving generation {i + 1}...")
             current_generation = await step_generation(
                 current_generation, 
@@ -254,13 +283,18 @@ async def run_promptbreeder(
 
         # score the last generation
         status.update("Scoring final generation...")
-        await score_generation(
+        result = await score_generation(
             current_generation,
             task,
             num_samples=config.num_scoring_samples,
             model_name=config.model_name,
             status=status,
         )
+        tracker.positive_exemplars.extend(result["positive_exemplars"])
+        tracker.negative_exemplars.extend(result["negative_exemplars"])
+        tracker.scored_prompts.extend([
+            {"prompt": p, "score": s} for p, s in result["scored_prompts"].items()    
+        ])
         tracker.generations.append(copy.deepcopy(current_generation))
         print ("=== FINAL GENERATION ===")
         print(f"Best score: {max([u.fitness for u in current_generation.units]):.3f}")
@@ -269,10 +303,12 @@ async def run_promptbreeder(
             metrics = tracker.scoring_model.update(current_generation.units, log_dir=f"logs/{config.experiment_name}", status=status)
             if metrics is not None:
                 logger.info(f"Metrics: {metrics}")
-        current_generation.save_to_file(f"logs/{config.experiment_name}/gen_{i + 1}_final.json")
-
+        
         # rank the final prompts
         items = await rank_final_prompts(tracker.config, status=status)
+        tracker.final_prompts = items
+
+        tracker.save(f"logs/{config.experiment_name}/experiment.json")
     
     return items
 

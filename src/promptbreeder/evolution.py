@@ -58,15 +58,17 @@ class Generation:
     correct_examples: list[dict[str, str]] = None
     incorrect_examples: list[dict[str, str]] = None
 
-    def save_to_file(self, file_name: str):
-        result = {
+    def to_dict(self):
+        return {
             "step": self.step,
             "lineage": [u.__dict__ for u in self.lineage],
             # sorted units by fitness
             "units": [u.__dict__ for u in sorted(self.units, key=lambda x: -x.fitness)],
         }
-        with open(file_name, "a") as f:
-            json.dump(result, f, indent=2)
+    
+    def save_to_file(self, file_name: str):
+        with open(file_name, "w+") as f:
+            json.dump(self.to_dict(), f, indent=2)
 
 # All mutation operators take the Task, the Generation, and the Unit to mutate.
 # They return a new Unit.
@@ -372,6 +374,8 @@ async def score_generation(
     scores = result["scored_prompts"]
     for i in range(len(generation.units)):
         generation.units[i].fitness = scores[generation.units[i].task_prompt]
+
+    return result # can get out positive/negative examples from this
 
 
 async def mutate_units(units: list[Unit], generation: Generation, task: Task):
