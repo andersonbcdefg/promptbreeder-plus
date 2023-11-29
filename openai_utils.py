@@ -253,6 +253,7 @@ async def process_api_requests_from_list(
     cache: Optional[SqliteCache] = None,
     callback: Optional[Callable] = None,  # should take in (id, messages, response)
     temperature: float = 0.0,
+    json_mode: bool = False,
     max_new_tokens: Optional[int] = None,
     show_progress: bool = False,
 ):
@@ -301,6 +302,7 @@ async def process_api_requests_from_list(
                         messages=messages,
                         attempts_left=max_attempts,
                         temperature=temperature,
+                        json_mode=json_mode,
                         max_new_tokens=max_new_tokens,
                         model=model,
                     )
@@ -390,75 +392,12 @@ async def process_api_requests_from_list(
         )
     return results
 
-
-def run_chat_queries(
-    prompts: list[list[dict]],  # each prompt is just a list of messages
-    max_tokens_per_minute: int,
-    max_requests_per_minute: int,
-    temperature: float = 0.0,
-    model_name: Literal["gpt-3.5-turbo", "gpt-4-turbo", "gpt4", "mistral"] = None,
-    callback: Optional[Callable] = None,  # should take in (id, messages, response)
-    max_new_tokens: Optional[int] = None,
-    max_attempts: int = 5,
-    cache_file: str = None,
-    show_progress: bool = False,
-):
-    model = {
-        "gpt-3.5-turbo": GPT3_TURBO,
-        "gpt-4-turbo": GPT4_TURBO,
-        "gpt4": GPT4,
-        "mistral": MISTRAL,
-    }.get(model_name, None)
-    if cache_file is not None:
-        cache = SqliteCache(cache_file)
-    else:
-        cache = None
-    results = asyncio.run(
-        process_api_requests_from_list(
-            prompts=prompts,
-            max_attempts=max_attempts,
-            max_tokens_per_minute=max_tokens_per_minute,
-            max_requests_per_minute=max_requests_per_minute,
-            temperature=temperature,
-            max_new_tokens=max_new_tokens,
-            show_progress=show_progress,
-            cache=cache,
-            model=model,
-            callback=callback,
-        )
-    )
-    # extract the replies
-    replies = [None for _ in range(len(prompts))]
-    usage = [None for _ in range(len(prompts))]
-    for result in results:
-        if len(result.result) == 0:
-            logger.error(f"Result is empty: {result}")
-            raise Exception("Result is empty")
-        if isinstance(result.result[-1], str):
-            logger.error(f"Result is a string instead of the expected dict: {result}")
-            raise Exception("Result is a string")
-        if "error" in result.result[-1].keys():
-            replies[result.task_id] = None
-        else:
-            replies[result.task_id] = result.result[-1]["choices"][0]["message"][
-                "content"
-            ]
-        usage[result.task_id] = {
-            "model": result.model.name,
-            "input_tokens": result.num_tokens,
-            "completion_tokens": len(tokenizer.encode(replies[result.task_id])) if replies[result.task_id] is not None else None,
-            "attempts": max_attempts - result.attempts_left,
-        }
-        
-    return replies, usage
-    
-
-
 async def run_chat_queries_async(
     prompts: list[list[dict]],  # each prompt is just a list of messages
     max_tokens_per_minute: int,
     max_requests_per_minute: int,
     temperature: float = 0.0,
+    json_mode: bool = False,
     model_name: Literal["gpt-3.5-turbo", "gpt-4-turbo", "gpt4", "mistral"] = None,
     callback: Optional[Callable] = None,  # should take in (id, messages, response)
     max_new_tokens: Optional[int] = None,
@@ -482,6 +421,7 @@ async def run_chat_queries_async(
         max_tokens_per_minute=max_tokens_per_minute,
         max_requests_per_minute=max_requests_per_minute,
         temperature=temperature,
+        json_mode=json_mode,
         max_new_tokens=max_new_tokens,
         show_progress=show_progress,
         cache=cache,
@@ -514,50 +454,6 @@ async def run_chat_queries_async(
     return replies, usage
 
 
-def test_run_chat_queries(model_name=None, cache_file=None):
-    from dotenv import load_dotenv
-
-    try:
-        load_dotenv()
-    except:
-        print(
-            "Assuming we are running on the server. Make sure to set the environment variables manually."
-        )
-        pass
-    prompts = [
-        [
-            {"role": "system", "content": "You are a helpful assistant."},
-            {
-                "role": "user",
-                "content": "What are ten birthday party ideas for my non-binary child?",
-            },
-        ],
-        [
-            {"role": "system", "content": "You are a sarcastic assistant."},
-            {"role": "user", "content": "Hey, how's it going?"},
-        ],
-        [
-            {
-                "role": "system",
-                "content": "You are an assistant that answers every chat in Spanish, even if the prior messages are in English.",
-            },
-            {"role": "user", "content": "Hello, how are you?"},
-        ],
-    ]
-    replies = run_chat_queries(
-        prompts=prompts,
-        max_tokens_per_minute=25000,
-        max_requests_per_minute=100,
-        temperature=0.0,
-        model_name=model_name,
-        cache_file=cache_file,
-        max_new_tokens=None,
-        max_attempts=3,
-        show_progress=False,
-    )
-    print(replies)
-
-
 def instructions_to_message_lists(prompts: list[str], system_prompt: str = None):
     """
     Convert a list of instructions into a list of lists of messages.
@@ -571,37 +467,13 @@ def instructions_to_message_lists(prompts: list[str], system_prompt: str = None)
         result.append(messages)
     return result
 
-
-def get_completion_simple(
-    prompt: str,
-    model_name: Literal[
-        "gpt-3.5-turbo", "gpt-4-turbo", "gpt4", "mistral"
-    ] = "gpt-3.5-turbo",
-    temperature: float = 0.0,
-    max_new_tokens: Optional[int] = None,
-):
-    """
-    Get a single completion from a prompt.
-    """
-    return run_chat_queries(
-        prompts=instructions_to_message_lists([prompt]),
-        max_tokens_per_minute=25000,
-        max_requests_per_minute=100,
-        temperature=temperature,
-        model_name=model_name,
-        cache_file=None,
-        max_new_tokens=max_new_tokens,
-        max_attempts=5,
-        show_progress=False,
-    )[0]
-
-
 async def get_completion_simple_async(
     prompt: str,
     model_name: Literal[
         "gpt-3.5-turbo", "gpt-4-turbo", "gpt4", "mistral"
     ] = "gpt-3.5-turbo",
     temperature: float = 0.0,
+    json_mode: bool = False,
     max_new_tokens: Optional[int] = None,
 ):
     """
@@ -612,6 +484,7 @@ async def get_completion_simple_async(
         max_tokens_per_minute=25000,
         max_requests_per_minute=100,
         temperature=temperature,
+        json_mode=json_mode,
         model_name=model_name,
         cache_file=None,
         max_new_tokens=max_new_tokens,

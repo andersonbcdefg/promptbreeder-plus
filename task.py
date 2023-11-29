@@ -341,21 +341,30 @@ async def run_task(
     df = pd.read_csv(f"data/{split}/{task.data_file}").sample(
         num_samples, random_state=seed
     )
+    use_json_mode = task.grade_fn.__name__ == "grade_json" and "turbo" in model
+    if use_json_mode:
+        print("Using JSON mode!")
     queries = []
     for prompt in prompts:
         for inp in df[task.input_column]:
-            queries.append([{"role": "user", "content": "INSTRUCTION: " + prompt + "\n\nTASK: " + inp}])
+            messages = []
+            if use_json_mode:
+                messages.append({"role": "system", "content": "Respond only with JSON."})
+            messages.append({"role": "user", "content": "INSTRUCTION: " + prompt + "\n\nTASK: " + inp})
+            queries.append(messages)
 
     def cb(task_id: int, messages: list, result: str, status_tracker: StatusTracker, base_status: str, num_queries: int):
         num_finished = status_tracker.num_tasks_succeeded
         new_status = base_status + f" ({num_finished}/{num_queries})"
         status.update(new_status)
 
+    
     responses, usage = await run_chat_queries_async(
         prompts=queries,
         max_tokens_per_minute=100_000,
         max_requests_per_minute=500,
         model_name=model,
+        json_mode=use_json_mode,
         max_new_tokens=task.max_tokens,
         callback=partial(cb, base_status=base_status, num_queries=len(queries))
     )
