@@ -188,6 +188,10 @@ async def run_promptbreeder_in_background(
     )
     print(f"Tried to send email to {email}, got response: ", res.json())
 
+    if config.delete_data_on_exit:
+        os.remove(f"data/train/{config.experiment_name}.csv")
+        os.remove(f"data/dev/{config.experiment_name}.csv")
+
 
 @app.post("/run_promptbreeder")
 async def promptbreeder_endpoint(
