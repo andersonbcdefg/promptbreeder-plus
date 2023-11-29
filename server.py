@@ -132,6 +132,7 @@ async def run_promptbreeder_in_background(
     config: PromptBreederConfig,
     email: str
 ):
+    print(f'Rate limits: {os.environ.get("MAX_TOKENS_PER_MINUTE")} TPM, {os.environ.get("MAX_REQUESTS_PER_MINUTE")} RPM')
     # create log directory
     if not os.path.exists(f"logs/{config.experiment_name}"):
         os.makedirs(f"logs/{config.experiment_name}")
@@ -164,30 +165,39 @@ async def run_promptbreeder_in_background(
 
 
     # TODO: email results to user
-    loops_api_key = os.environ.get("LOOPS_API_KEY")
-    loops_transactional_id = os.environ.get("LOOPS_TRANSACTIONAL_ID")
-
-    res = requests.post(
-        "https://app.loops.so/api/v1/transactional",
-        # auth token
-        headers={
-            "Authorization": "Bearer " + loops_api_key
-        },
-        json={
-            "transactionalId": loops_transactional_id,
-            "email": email,
-            "dataVariables": {
-                "experiment_name": config.experiment_name.split("_", 1)[1],
-                "num_generations": config.generations,
-                "population_size": config.population_size,
-                "best_score": round(best_score, 2),
-                "best_prompt": best_prompt,
-                "improvement_over_baseline": round(best_score - baseline_score, 2),
-                "all_prompts": json.dumps({"prompts": items}, indent=4)
+    loops_api_key = os.environ.get("LOOPS_API_KEY", None)
+    loops_transactional_id = os.environ.get("LOOPS_TRANSACTIONAL_ID", None)
+    if loops_api_key and loops_transactional_id:
+        res = requests.post(
+            "https://app.loops.so/api/v1/transactional",
+            # auth token
+            headers={
+                "Authorization": "Bearer " + loops_api_key
+            },
+            json={
+                "transactionalId": loops_transactional_id,
+                "email": email,
+                "dataVariables": {
+                    "experiment_name": config.experiment_name.split("_", 1)[1],
+                    "num_generations": config.generations,
+                    "population_size": config.population_size,
+                    "best_score": round(best_score, 2),
+                    "best_prompt": best_prompt,
+                    "improvement_over_baseline": round(best_score - baseline_score, 2),
+                    "all_prompts": json.dumps({"prompts": items}, indent=4)
+                }
             }
-        }
-    )
-    print(f"Tried to send email to {email}, got response: ", res.json())
+        )
+        print(f"Tried to send email to {email}, got response: ", res.json())
+    else:
+        # just print what we could have sent
+        print(f"Your PromptBreeder run {config.experiment_name.split('_', 1)[1]} is finished. Over {config.generations} generations of {config.population_size} prompts, we selected the very best ones, just for you.")
+        print("The best-performing prompt, with a score of best_score, was:")
+        print("\n===\n", best_prompt, "\n===\n")
+        print(f"This improved by {round(best_score - baseline_score, 2)} over the baseline task description. You'll find the rest of your top-performing prompts below.")
+        print("===\n")
+        print(json.dumps({"prompts": items}, indent=4))
+        print("\n===\n")
 
     if config.delete_data_on_exit:
         os.remove(f"data/train/{config.experiment_name}.csv")

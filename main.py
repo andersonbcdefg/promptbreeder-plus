@@ -276,9 +276,6 @@ async def run_promptbreeder(
     
     return items
 
-    
-
-
 async def main(config: Union[PromptBreederConfig, str]):
     # Set up config
     if isinstance(config, str):
