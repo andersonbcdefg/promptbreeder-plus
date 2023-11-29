@@ -132,7 +132,7 @@ async def run_promptbreeder_in_background(
     config: PromptBreederConfig,
     email: str
 ):
-    print(f'Rate limits: {os.environ.get("MAX_TOKENS_PER_MINUTE")} TPM, {os.environ.get("MAX_REQUESTS_PER_MINUTE")} RPM')
+    print(f'Rate limits: {config.max_tokens_per_minute} TPM, {config.max_requests_per_minute} RPM')
     # create log directory
     if not os.path.exists(f"logs/{config.experiment_name}"):
         os.makedirs(f"logs/{config.experiment_name}")

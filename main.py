@@ -19,9 +19,6 @@ from heuristic_classifier import ScoringModel
 from dotenv import load_dotenv
 load_dotenv()
 
-MAX_TOKENS_PER_MINUTE = int(os.environ.get("MAX_TOKENS_PER_MINUTE", 400_000))
-MAX_REQUESTS_PER_MINUTE = int(os.environ.get("MAX_REQUESTS_PER_MINUTE", 1000))
-
 @dataclass
 class PromptBreederConfig:
     experiment_name: str
@@ -35,6 +32,8 @@ class PromptBreederConfig:
     use_heuristic_model: bool = True
     diversity_factor: Optional[float] = 0.5
     oversample_factor: Optional[int] = 4
+    max_requests_per_minute: int = field(default_factory=lambda: os.environ.get("MAX_REQUESTS_PER_MINUTE", 1000))
+    max_tokens_per_minute: int = field(default_factory=lambda: os.environ.get("MAX_TOKENS_PER_MINUTE", 400_000))
     delete_data_on_exit: bool = False
 
     @classmethod
@@ -90,8 +89,8 @@ async def calibrate_model(
     with Status("Calibrating scoring model...") as status:
         calibration_prompts, usage = await run_chat_queries_async(
             prompts=instructions_to_message_lists(initial_task_meta_prompts),
-            max_tokens_per_minute=MAX_TOKENS_PER_MINUTE,
-            max_requests_per_minute=MAX_REQUESTS_PER_MINUTE,
+            max_tokens_per_minute=tracker.config.max_tokens_per_minute,
+            max_requests_per_minute=tracker.config.max_requests_per_minute,
             model_name="gpt-3.5-turbo",
             max_new_tokens=512,
             max_attempts=10,
@@ -139,8 +138,8 @@ async def initialize(
     with Status("Creating initial task prompts...") as status:
         initial_task_prompts, usage = await run_chat_queries_async(
             prompts=instructions_to_message_lists(initial_task_meta_prompts),
-            max_tokens_per_minute=MAX_TOKENS_PER_MINUTE,
-            max_requests_per_minute=MAX_REQUESTS_PER_MINUTE,
+            max_tokens_per_minute=config.max_tokens_per_minute,
+            max_requests_per_minute=config.max_requests_per_minute,
             model_name="gpt-3.5-turbo",
             max_new_tokens=512,
             max_attempts=10,
