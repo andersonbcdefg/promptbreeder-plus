@@ -1,22 +1,23 @@
 # import asyncio
-import os
-import json
 import copy
-import fire
+import json
+import os
 import random
 from dataclasses import dataclass, field
-from typing import Literal, Union, Optional
+from typing import Literal, Optional, Union
 
-
+import fire
 import yaml
-from rich.status import Status
-from prompts import MUTATION_PROMPTS, THINKING_STYLES
-from evolution import Generation, Unit, score_generation, step_generation
-from logger import logger
-from openai_utils import instructions_to_message_lists, run_chat_queries_async
-from task import Task, TASKS, run_task
-from heuristic_classifier import ScoringModel
 from dotenv import load_dotenv
+from rich.status import Status
+
+from .evolution import Generation, Unit, score_generation, step_generation
+from .logger import logger
+from .openai_utils import instructions_to_message_lists, run_chat_queries_async
+from .prompts import MUTATION_PROMPTS, THINKING_STYLES
+from .scoring_model import ScoringModel
+from .task import TASKS, Task, run_task
+
 load_dotenv()
 
 @dataclass
@@ -252,7 +253,7 @@ async def run_promptbreeder(
             )
 
         # score the last generation
-        status.update(f"Scoring final generation...")
+        status.update("Scoring final generation...")
         await score_generation(
             current_generation,
             task,
@@ -261,7 +262,7 @@ async def run_promptbreeder(
             status=status,
         )
         tracker.generations.append(copy.deepcopy(current_generation))
-        print (f"=== FINAL GENERATION ===")
+        print ("=== FINAL GENERATION ===")
         print(f"Best score: {max([u.fitness for u in current_generation.units]):.3f}")
         print(f"Average score: {sum([u.fitness for u in current_generation.units]) / len(current_generation.units):.3f}")
         if tracker.scoring_model is not None:

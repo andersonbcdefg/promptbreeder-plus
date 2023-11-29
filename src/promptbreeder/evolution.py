@@ -1,21 +1,22 @@
 import asyncio
+import copy
+import json
 import random
 from dataclasses import dataclass
 from typing import Literal, Optional
-import copy
+
+import numpy as np
 from rich.status import Status
 
-import json
-import numpy as np
-import pandas as pd
+from .embeddings.onnx_backend import ONNXEmbeddingModel
+from .openai_utils import get_completion_simple_async
 
-from prompts import (
-    MUTATION_PROMPTS, 
+# import pandas as pd
+from .prompts import (
+    MUTATION_PROMPTS,
     THINKING_STYLES,
 )
-from embeddings.onnx_backend import ONNXEmbeddingModel
-from openai_utils import get_completion_simple_async
-from task import Task, run_task
+from .task import Task, run_task
 
 # Mutation Operator Percentage
 # Zero-order Hyper-Mutation 42%

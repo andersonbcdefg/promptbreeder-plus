@@ -1,22 +1,28 @@
-import os
 import json
+import os
+import base64
+import tempfile
 import uuid
+
 import pandas as pd
 import requests
-from fastapi import FastAPI, Request, Form, UploadFile, File
-from fastapi.templating import Jinja2Templates
+from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile
 from fastapi.staticfiles import StaticFiles
-import tempfile
-from fastapi import BackgroundTasks
-from main import (
-    ExperimentTracker,
-    PromptBreederConfig,
-    initialize,
-    calibrate_model,
-    run_promptbreeder
-)
-from task import Task, GRADE_FNS
+from fastapi.templating import Jinja2Templates
+
+try:
+    from promptbreeder.main import (
+        ExperimentTracker,
+        PromptBreederConfig,
+        calibrate_model,
+        initialize,
+        run_promptbreeder,
+    )
+    from promptbreeder.task import GRADE_FNS, Task
+except ImportError:
+    print("You need to install PromptBreeder. Navigate to the repository root and run `pip install -e .`")
 from typing import Optional
+
 
 async def get_promptbreeder_config(
     experiment: str,
@@ -162,6 +168,8 @@ async def run_promptbreeder_in_background(
     items = [
         {"prompt": i["prompt"], "score": round(i["score"], 2)} for i in items
     ]
+    items_json = json.dumps(items)
+    encoded_items = base64.b64encode(items_json.encode()).decode()
 
 
     # TODO: email results to user
@@ -177,6 +185,14 @@ async def run_promptbreeder_in_background(
             json={
                 "transactionalId": loops_transactional_id,
                 "email": email,
+                "attachments": [
+                    {
+                        "filename": "prompts.json",
+                        "contentType": "application/json",
+                        # data is base64-encoded
+                        "data": encoded_items
+                    }
+                ],
                 "dataVariables": {
                     "experiment_name": config.experiment_name.split("_", 1)[1],
                     "num_generations": config.generations,

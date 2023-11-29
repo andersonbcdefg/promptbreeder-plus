@@ -5,23 +5,23 @@
 # - Multiple choice match (model answer begins with same letter as gold answer)
 # - Semantic similarity (cosine similarity of embeddings
 # - Model-graded (does the model output match the gold answer according to GPT-3.5/4)
-import re
-import os
 import json
+import os
+import re
 from dataclasses import dataclass
-from typing import Callable, Literal, Optional
 from functools import partial
+from typing import Callable, Literal, Optional
 
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
+from rich.status import Status
 
-from embeddings.onnx_backend import ONNXEmbeddingModel
+from .embeddings.onnx_backend import ONNXEmbeddingModel
 
 # import matplotlib.pyplot as plt
-from logger import logger
-from openai_utils import run_chat_queries_async, StatusTracker
-from rich.status import Status
+from .logger import logger
+from .openai_utils import StatusTracker, run_chat_queries_async
 
 load_dotenv()
 MAX_TOKENS_PER_MINUTE = int(os.environ.get("MAX_TOKENS_PER_MINUTE", 400_000))
@@ -122,8 +122,8 @@ async def grade_json(inputs, model_outputs, gold_outputs, negative_outputs=None)
             m = str(json.loads(m.strip())["answer"]).strip()
         except:
             m = ""
-        m = m.strip()
-        g = g.strip()
+        m = str(m).strip()
+        g = str(g).strip()
         if len(m) == 0:
             grades.append(False)
         elif m.lower() == g.lower():

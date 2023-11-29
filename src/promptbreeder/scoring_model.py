@@ -1,12 +1,13 @@
 import os
-import random
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.linear_model import PassiveAggressiveRegressor
-from embeddings.onnx_backend import ONNXEmbeddingModel
-from evolution import Unit
-from rich.status import Status
 from typing import Optional
+
+import matplotlib.pyplot as plt
+import numpy as np
+from sklearn.linear_model import PassiveAggressiveRegressor
+
+from .embeddings.onnx_backend import ONNXEmbeddingModel
+from .evolution import Unit
+
 
 class ScoringModel:
     def __init__(self, diversity_factor = 0.5, embedding_model_name: str = "bge-micro-v2"):
@@ -63,10 +64,10 @@ class ScoringModel:
                 plt.close()
 
         else:
-            print(f"Heuristic model not trained yet, skipping prediction error measurement.")
+            print("Heuristic model not trained yet, skipping prediction error measurement.")
             metrics = None
         # now, update the model
-        status.update(f"Updating scoring model...")
+        status.update("Updating scoring model...")
         self.Xs = X if self.Xs is None else np.concatenate([self.Xs, X], axis=0)
         self.ys = y if self.ys is None else np.concatenate([self.ys, y], axis=0)
         self.fit()

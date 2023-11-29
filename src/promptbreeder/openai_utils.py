@@ -5,7 +5,6 @@ import json
 import os
 import sqlite3
 import time
-from collections import Counter
 from dataclasses import dataclass, field
 from typing import Callable, Literal, Optional
 
@@ -14,7 +13,7 @@ import tiktoken
 import xxhash
 from tqdm.auto import tqdm
 
-from logger import logger
+from .logger import logger
 
 ## TODO: Make a Queue where we can append API requests as-needed in other parts of the application, and they can be
 ## processed in the background in parallel.
