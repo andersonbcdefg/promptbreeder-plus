@@ -12,7 +12,7 @@ from prompts import MUTATION_PROMPTS, THINKING_STYLES
 from evolution import Generation, Unit, score_generation, step_generation
 from logger import logger
 from openai_utils import instructions_to_message_lists, run_chat_queries_async
-from task import TASKS, run_task
+from task import Task, TASKS, run_task
 from heuristic_classifier import ScoringModel
 from dotenv import load_dotenv
 load_dotenv()
@@ -23,7 +23,7 @@ MAX_REQUESTS_PER_MINUTE = int(os.environ.get("MAX_REQUESTS_PER_MINUTE", 1000))
 @dataclass
 class PromptBreederConfig:
     experiment_name: str
-    task_name: str
+    task: Union[str, Task]
     model_name: Literal["gpt-3.5-turbo", "gpt-4-turbo", "gpt-4", "mistral"]
     generations: int
     population_size: int
@@ -32,15 +32,19 @@ class PromptBreederConfig:
     random_seed: int
     use_heuristic_model: bool = True
     diversity_factor: Optional[float] = 0.5
-    oversample_factor: Optional[int] = 1
+    oversample_factor: Optional[int] = 4
+    delete_data_on_exit: bool = False
 
     @classmethod
     def from_yaml(cls, file_name: str):
         return cls(**yaml.safe_load(open(file_name)))
     
     def __post_init__(self):
-        if self.task_name not in TASKS:
-            raise ValueError(f"Invalid task name: {self.task_name}")
+        if isinstance(self.task, str):
+            if self.task not in TASKS:
+                raise ValueError(f"Invalid task name: {self.task}")
+            else:
+                self.task = TASKS[self.task]
         if self.model_name not in ["gpt-3.5-turbo", "gpt-4-turbo", "gpt-4", "mistral"]:
             raise ValueError(f"Invalid model name: {self.model_name}")
         if self.population_size % 2 != 0:
@@ -59,7 +63,7 @@ async def calibrate_model(
     config: PromptBreederConfig,
 ):
     print("Calibrating scoring model with random prompts...")
-    task = TASKS[config.task_name]
+    task = config.task
     scoring_model = ScoringModel()
     initial_task_meta_prompts = []
     for i in range(225):
@@ -109,7 +113,7 @@ async def calibrate_model(
 async def initialize(
     config: PromptBreederConfig,
 ):    
-    task = TASKS[config.task_name]
+    task = config.task
     random.seed(config.random_seed)
     initial_task_meta_prompts = []
     for i in range(config.population_size):
@@ -147,38 +151,63 @@ async def initialize(
         return initial_generation
 
 async def rank_final_prompts(
-    config: PromptBreederConfig
+    config: PromptBreederConfig,
+    status: Optional[Status] = None
 ):
-    task = TASKS[config.task_name]
-    with Status("Ranking final prompts...") as status:
-        top_prompts = set()
-        for file in os.listdir(f"logs/{config.experiment_name}"):
-            if file.startswith("gen_") and file.endswith(".json"):
-                units = json.load(open(f"logs/{config.experiment_name}/{file}"))["units"]
-                top_prompts.update([u["task_prompt"] for u in units[:2]])
-        # evaluate the prompts
-        print(f"Evaluating {len(top_prompts)} prompts...")
-        result = await run_task(
-            task,
-            list(top_prompts),
-            split="dev",
-            model=config.model_name,
-            num_samples=config.num_final_scoring_samples,
-            status=status,
-            base_status="Evaluating top prompts on held-out dev set...",
-        )
-        scores = result["scored_prompts"]
-        
-        for prompt, score in scores.items():
-            logger.log_to_file(f"Score: {score}, Prompt: {prompt}")
-            print(f"Score: {score}, Prompt: {prompt}\n\n====================\n\n")
+    task = config.task
+    
+    top_prompts = set()
+    # get the top prompts from each generation
+    for file in os.listdir(f"logs/{config.experiment_name}"):
+        if file.startswith("gen_") and file.endswith(".json"):
+            units = json.load(open(f"logs/{config.experiment_name}/{file}"))["units"]
+            top_prompts.update([u["task_prompt"] for u in units[:2]])
+    # also add the initial task description--we can measure how much we improved performance
+    top_prompts.add(task.description)
+    top_prompts = list(top_prompts)
+
+    # evaluate the prompts
+    print(f"Evaluating {len(top_prompts)} prompts...")
+    result = await run_task(
+        task,
+        list(top_prompts),
+        split="dev",
+        model=config.model_name,
+        num_samples=config.num_final_scoring_samples,
+        status=status,
+        base_status="Evaluating top prompts on held-out dev set...",
+    )
+    scores = result["scored_prompts"]
+    items = []
+    for prompt, score in scores.items():
+        logger.log_to_file(f"Score: {score}, Prompt: {prompt}")
+        print(f"Score: {score}, Prompt: {prompt}\n\n====================\n\n")
+        items.append({"prompt": prompt, "score": score})
+
+    # get the best score/prompt and compare to baseline
+    best_prompt = max(items, key=lambda x: x["score"])
+    best_score = best_prompt["score"]
+    original_prompt = next(i for i in items if i["prompt"] == task.description)
+    original_score = original_prompt["score"]
+    improvement = best_score - original_score
+    print(f"Best prompt: {best_prompt['prompt']}")
+    print(f"Best score: {best_score}")
+    print("Improved {} over baseline prompt!".format(improvement))
+
+    # save the results
+    with open(f"logs/{config.experiment_name}/final_ranking.json", "w") as f:
+        json.dump(items, f, indent=2)
+
+    return items
+
+    
 
 async def run_promptbreeder(
     initial_generation: Generation,
     scoring_model: Optional[ScoringModel],
     config: PromptBreederConfig,
 ):
-    task = TASKS[config.task_name]
+    task = config.task
 
     # Run the evolution
     with Status("Starting PromptBreeder...") as status:
@@ -227,7 +256,9 @@ async def run_promptbreeder(
         current_generation.save_to_file(f"logs/{config.experiment_name}/gen_{i + 1}_final.json")
 
         # rank the final prompts
-        await rank_final_prompts(config)
+        items = await rank_final_prompts(config, status=status)
+    
+    return items
 
     
 
@@ -251,7 +282,7 @@ async def main(config: Union[PromptBreederConfig, str]):
     initial_generation = await initialize(config)
 
     # Run
-    results = await run_promptbreeder(
+    items = await run_promptbreeder(
         initial_generation, 
         scoring_model,
         config

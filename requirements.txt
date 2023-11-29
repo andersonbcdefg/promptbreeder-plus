@@ -8,3 +8,6 @@ huggingface_hub
 numpy
 python-dotenv
 rich
+pytailwindcss
+jinja2
+fastapi

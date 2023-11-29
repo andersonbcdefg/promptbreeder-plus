@@ -8,11 +8,10 @@ config = PromptBreederConfig.from_yaml("config/test.yaml")
 
 async def test():
     console = Console()
-    task = TASKS[config.task_name]
+    task = config.task
     scoring_model = ScoringModel()
 
     with Status("Initializing...", console=console) as status:
-    
         # set up 0-th generation
         status.update("Creating initial task prompts...")
         initial_generation = await initialize(config)

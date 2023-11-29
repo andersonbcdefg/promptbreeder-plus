@@ -1,5 +1,5 @@
 experiment_name: mmlu_test
-task_name: mmlu
+task: mmlu
 model_name: gpt-3.5-turbo
 generations: 8
 population_size: 16

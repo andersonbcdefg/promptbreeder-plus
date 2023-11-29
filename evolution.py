@@ -296,8 +296,10 @@ async def first_order_hypermutation(unit: Unit, generation: Generation, task: Ta
     )
 
 async def lamarckian_mutation(unit: Unit, generation: Generation, task: Task):
-    # get an examplar for the task
+    # get an exemplar for the task
     exemplars = task.exemplars
+    if not exemplars:
+        return await first_order_hypermutation(unit, generation, task)
     exemplar = random.choice(exemplars)
     meta_prompt = (
         "I gave a friend some really great instructions to solve a problem. "

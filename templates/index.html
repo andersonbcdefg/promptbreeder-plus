@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% macro form_input(name, label, placeholder, type="text") %}
+<div class="flex flex-col gap-1">
+    <label class="text-xs" for="{{ name }}">{{ label }}</label>
+    <input class="rounded-sm py-1 px-2 text-slate-800 placeholder:italic placeholder:font-thin placeholder:opacity-80" type="{{ type }}" name="{{ name }}" id="{{ name }}" placeholder="{{ placeholder }}">
+</div>
+{% endmacro %}
+
+{% macro form_textarea(name, label, placeholder) %}
+<div class="flex flex-col gap-1">
+    <label class="text-xs" for="{{ name }}">{{ label }}</label>
+    <textarea class="text-xs rounded-sm py-1 px-2 text-slate-800 placeholder:italic placeholder:font-thin placeholder:opacity-80" name="{{ name }}" id="{{ name }}" placeholder="{{ placeholder }}"></textarea>
+</div>
+{% endmacro %}
+
+
+{% block content %}
+<div class="w-full flex flex-col items-center gap-4 py-6 text-slate-100">
+    <script>
+        const onSubmit = (e) => {e.preventDefault()}
+
+        const showPopup = (message) => {
+            const popup = `
+                <div class="fixed w-screen h-screen top-0 left-0 bg-black opacity-50 z-40 flex items-center justify-center"></div>
+                <div class="fixed top-0 left-0 w-screen h-screen z-50 flex items-center justify-center">
+                    <div class="bg-white rounded-md p-6 flex flex-col gap-4">
+                        <p>${message}</p>
+                        <button class="bg-slate-100 text-zinc-800 py-2 px-4 rounded-md cursor-pointer w-1/2 hover:bg-slate-200"
+                        onclick="this.parentElement.parentElement.remove()">OK</button>
+                    </div>
+                </div>`;
+            document.body.insertAdjacentHTML("beforeend", popup);
+        }
+
+        const onUpload = (e) => {
+            const file = document.getElementById("file").files[0];
+            const fileMessage = document.getElementById("file-message");
+            fileMessage.innerHTML = file.name;
+            fileMessage.classList.add("italic")
+        }
+
+        const getFileFirstLine = (file) => {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const contents = e.target.result;
+                    const lines = contents.split("\n");
+                    const firstLine = lines[0];
+                    resolve(firstLine);
+                }
+                reader.readAsText(file);
+            })
+        }
+
+        const validateFormData = async (data) => {
+            const { email, experiment, task_description, population, generations, input_field, output_field } = data;
+            // make sure all required fields are filled out
+            if (!email || !experiment || !task_description || !population || !generations || !input_field || !output_field) {
+                let message = "Please fill out all required fields.";
+                for (const key of [
+                    "email", "experiment", "task_description", "population", "generations", "input_field", "output_field"
+                ]) {
+                    if (!data[key]) {
+                        message += "\n" + key + " is required.";
+                    }
+                }
+                return [false, message]
+            }
+            // make sure valid values for numerical fields
+            if (population < 10 || population > 32) {
+                return [false, "Population size must be between 10 and 32."]
+            }
+            if (population % 2 != 0) {
+                return [false, "Population size must be even."]
+            }
+            if (generations < 4 || generations > 12) {
+                return [false, "Generations must be between 4 and 12."]
+            }
+            // make sure valid email
+            const emailRegex = /\S+@\S+\.\S+/;
+            if (!emailRegex.test(email)) {
+                return [false, "Please enter a valid email address."]
+            }
+            // make sure valid input/output column.
+            // first read first line of the file...
+            const file = document.getElementById("file").files[0];
+            if (!file) {
+                return [false, "Please upload a file."]
+            }
+            const firstLine = await getFileFirstLine(file);
+            // if it's JSON, parse and get fields
+            let keys;
+            if (file.name.endsWith(".jsonl")) {
+                const firstLineJSON = JSON.parse(firstLine);
+                keys = Object.keys(firstLineJSON);
+                if (!keys.includes(input_field) || !keys.includes(output_field)) {
+                    return [false, "Input and output fields must be valid JSON keys: " + keys.join(", ") + "."]
+                }
+            }
+            // if it's CSV, split and get fields
+            else if (file.name.endsWith(".csv")) {
+                const firstLineCSV = firstLine.split(",");
+                keys = firstLineCSV;
+                if (!keys.includes(input_field) || !keys.includes(output_field)) {
+                    return [false, "Input and output fields must be valid CSV columns: " + keys.join(", ") + "."]
+                }
+            }
+
+            return [true, ""];
+        }
+        const submitForm = async (e) => {
+            e.preventDefault();
+            const form = document.querySelector("form");
+            const formData = new FormData(form);
+            const data = Object.fromEntries(formData.entries());
+            const [isValid, message] = await validateFormData(data);
+            console.log("submitting form! data = ", data);
+            if (!isValid) {
+                showPopup(message);
+                return;
+            } else {
+                fetch("/run_promptbreeder", {
+                    method: "POST",
+                    body: formData,
+                }).then((response) => {
+                    if (response.ok) {
+                        showPopup("Form submitted successfully!");
+                        form.reset();
+                        document.getElementById("file-message").innerHTML = "Upload a file (CSV or JSONL)";
+                    } else {
+                        throw new Error("Error submitting form.");
+                    }
+                }).catch((error) => {
+                    showPopup("Error submitting form.");
+                    console.log(error);
+                })
+            }
+        }
+    </script>
+    <h1 class="text-4xl font-thin">🐛 Welcome to PromptBreeder!</h1>
+    <p class="text-slate-300 max-w-2xl">PromptBreeder automatically optimizes your prompts for models like GPT-3.5-Turbo using a genetic algorithm, as described in <a class="underline hover:opacity-50" href="https://arxiv.org/abs/2309.16797">this paper.</a> Prompts are mutated and evolved over several generations, and only the fittest survive.</p>
+
+    <form class="w-[450px] p-4 flex flex-col gap-3 bg-slate-600 rounded-md border-slate-200 border-2"
+    method="POST" enctype="multipart/form-data" onsubmit="onSubmit">
+        {{ form_input('email', 'Email Address', 'satya@microsoft.com', 'email') }}
+        {{ form_input('experiment', 'Experiment Name', 'topic-classification') }}
+        {{ form_textarea('task_description', 'Task Description / Initial Prompt', 'Classify the prompt into one of six categories: writing, math, coding, travel, world knowledge, or other. Answer with JSON.') }}
+
+        <span class="text-xs">Model</span>
+        <div class="w-full relative -mt-2 bg-slate-50 rounded-sm cursor-pointer">
+            <select class="cursor-pointer w-full font-mono text-slate-800 px-2 py-2 rounded-sm appearance-none relative text-xs bg-transparent z-10" name="model">
+                <option disabled selected>Choose a model</option>
+                <option>gpt-3.5-turbo</option>
+            </select>
+            <div class="right-4 absolute -z-1 text-black top-[2px]">⌄</div>
+        </div>
+        <div class="flex flex-row justify-start">
+            <div class="w-1/2 pr-4">
+                {{ form_input('population', 'Population Size (10 - 32)', 16, 'number') }}
+            </div>
+            <div class="w-1/2 pr-4">
+                {{ form_input('generations', 'Generations (4 - 12)', 8, 'number') }}
+            </div>
+        </div>
+        
+        
+        <input type="file" id="file" name="file" class="hidden"
+            oninput="onUpload(event)"
+        ></input>
+        <span class="text-xs">Data File</span>
+        <label for="file" class="-mt-2 w-full cursor-pointer flex flex-row items-center px-4 gap-2 text-slate-200 border border-slate-100 py-1 rounded-md">
+            <span class="text-xl">📄</span>
+            <span class="text-xs" id="file-message">Upload a file (CSV or JSONL)</span>
+        </label>
+
+        <div class="flex flex-row">
+            <div class="w-1/2 pr-4">
+                
+                {{ form_input('input_field', 'Input Field', 'input', 'text') }}
+            </div>
+            <div class="w-1/2 pr-4">
+                {{ form_input('output_field', 'Output Field', 'output', 'text') }}
+            </div>
+        </div>
+
+        <span class="text-xs">Scoring Function</span>
+        <div class="w-full relative -mt-2 bg-slate-50 rounded-sm cursor-pointer">
+            <select class="cursor-pointer w-full font-mono text-slate-800 px-2 py-2 rounded-sm appearance-none relative text-xs bg-transparent z-10" name="grade_fn">
+                <option disabled selected>Choose a scoring function...</option>
+                <option>exact match</option>
+                <option>substring match</option>
+                <option>multiple choice</option>
+                <option>semantic similarity</option>
+                <option>json</option>
+                <option>llm</option>
+            </select>
+            <div class="right-4 absolute -z-1 text-black top-[2px]">⌄</div>
+        </div>
+
+        <!--Slider input from 0 to 1 for "diversity" factor-->
+        <div class="flex flex-row justify-start items-end">
+            <div class="w-1/2 pr-4 flex items-center pb-2 gap-4">
+                <input type="checkbox" name="heuristic" id="heuristic" checked class="ml-2">
+                <span class="text-xs">Use heuristic model</span>
+            </div>
+            <div class="w-1/2 pr-4 flex flex-col">
+                <span class="text-xs">Diversity Factor</span>
+                <div class="flex flex-row gap-2">
+                    <input type="range" min="0" max="1" step="0.05" value="0.5" class="w-3/4" 
+                    oninput="this.nextElementSibling.value = this.value" name="diversity_factor">
+                    <output class="border-slate-50 text-xs border rounded-lg px-2 py-1 block min-w-[40px] max-w-[40px] text-center">0.5</output>
+                </div>
+            </div>
+        </div>
+
+        <button type="button" class="place-self-end mt-4 bg-slate-100 text-zinc-800 py-2 px-4 rounded-md cursor-pointer w-1/2 hover:bg-slate-200"
+        onclick="submitForm(event)">Submit</button>
+    </form>
+</div>
+{% endblock %}

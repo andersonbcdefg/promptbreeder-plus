@@ -111,6 +111,7 @@ class APIRequest:
     messages: list[dict]
     attempts_left: int
     temperature: float = 0.0
+    json_mode: bool = False
     max_new_tokens: Optional[int] = None
     model: Optional[APIModel] = None
     result: list = field(default_factory=list)
@@ -135,6 +136,8 @@ class APIRequest:
         }
         if self.max_new_tokens is not None:
             self.request_json["max_tokens"] = self.max_new_tokens
+        if self.json_mode and "1106" in self.model.name:
+            self.request_json["response_format"] = {"type": "json_object"}
 
     async def call_api(
         self,

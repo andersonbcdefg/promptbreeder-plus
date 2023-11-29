@@ -171,6 +171,16 @@ async def grade_llm(inputs, model_outputs, gold_outputs, negative_outputs=None):
     return np.mean(grades), np.array(grades).astype(int).tolist()
 
 
+GRADE_FNS = {
+    "exact_match": grade_exact_match,
+    "substring_match": grade_substring_match,
+    "multiple_choice": grade_multiple_choice,
+    "semantic_similarity": grade_semantic_similarity,
+    "semantic_similarity_with_negatives": grade_semantic_similarity_with_negatives,
+    "json": grade_json,
+    "llm": grade_llm,
+}
+
 @dataclass
 class Task:
     name: str
