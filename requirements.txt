@@ -6,6 +6,7 @@ onnxruntime
 transformers
 huggingface_hub
 numpy
+pandas
 python-dotenv
 rich
 pytailwindcss
