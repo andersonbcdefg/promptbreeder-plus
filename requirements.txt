@@ -11,3 +11,4 @@ rich
 pytailwindcss
 jinja2
 fastapi
+uvicorn
