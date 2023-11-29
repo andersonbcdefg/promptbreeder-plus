@@ -32,8 +32,8 @@ class PromptBreederConfig:
     use_heuristic_model: bool = True
     diversity_factor: Optional[float] = 0.5
     oversample_factor: Optional[int] = 4
-    max_requests_per_minute: int = field(default_factory=lambda: os.environ.get("MAX_REQUESTS_PER_MINUTE", 1000))
-    max_tokens_per_minute: int = field(default_factory=lambda: os.environ.get("MAX_TOKENS_PER_MINUTE", 400_000))
+    max_requests_per_minute: int = field(default_factory=lambda: int(os.environ.get("MAX_REQUESTS_PER_MINUTE", 1000)))
+    max_tokens_per_minute: int = field(default_factory=lambda: int(os.environ.get("MAX_TOKENS_PER_MINUTE", 400_000)))
     delete_data_on_exit: bool = False
 
     @classmethod
