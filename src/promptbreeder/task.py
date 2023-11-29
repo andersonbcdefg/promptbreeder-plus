@@ -77,7 +77,7 @@ async def grade_multiple_choice(
             grades.append(True)
         else:
             grades.append(False)
-    return np.mean(grades), np.array(grades).astype(int).tolist()
+    return np.mean(grades).item(), np.array(grades).astype(int).tolist()
 
 async def grade_semantic_similarity(
     inputs, model_outputs, gold_outputs, negative_outputs=None
@@ -88,7 +88,8 @@ async def grade_semantic_similarity(
     similarities = [
         np.dot(m, g) for m, g in zip(model_embeddings, gold_embeddings)
     ]  # cosine similarity (range -1 to 1)
-    return (np.mean(similarities) + 1) / 2,  similarities
+    score = (np.mean(similarities) + 1) / 2  # scale to range 0 to 1
+    return score.item(),  [s.item() for s in similarities]
 
 
 async def grade_semantic_similarity_with_negatives(
@@ -109,7 +110,7 @@ async def grade_semantic_similarity_with_negatives(
     # plt.savefig("histogram.png")
     # plt.close()
     # score is fraction of gold similarities that are greater than negative similarities
-    return np.mean([d > 0 for d in differences]), [int(d > 0) for d in differences]
+    return np.mean([d > 0 for d in differences]).item(), [int(d > 0) for d in differences]
 
 async def grade_json(inputs, model_outputs, gold_outputs, negative_outputs=None):
     """
@@ -130,7 +131,7 @@ async def grade_json(inputs, model_outputs, gold_outputs, negative_outputs=None)
             grades.append(True)
         else:
             grades.append(False)
-    return np.mean(grades), np.array(grades).astype(int).tolist()
+    return np.mean(grades).item(), np.array(grades).astype(int).tolist()
 
 async def grade_llm(inputs, model_outputs, gold_outputs, negative_outputs=None):
     """Grades a task by whether the model output matches the gold answer according to GPT-3.5/4"""
