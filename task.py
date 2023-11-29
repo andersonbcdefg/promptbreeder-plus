@@ -88,7 +88,7 @@ async def grade_semantic_similarity(
     similarities = [
         np.dot(m, g) for m, g in zip(model_embeddings, gold_embeddings)
     ]  # cosine similarity (range -1 to 1)
-    return (np.mean(similarities) + 1) / 2,  similarities.tolist()
+    return (np.mean(similarities) + 1) / 2,  similarities
 
 
 async def grade_semantic_similarity_with_negatives(
