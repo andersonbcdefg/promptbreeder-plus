@@ -157,6 +157,10 @@ async def run_promptbreeder_in_background(
     best_score = items[0]["score"]
     baseline_score = [i for i in items if i["prompt"] == config.task.description][0]["score"]
 
+    items = [
+        {"prompt": i["prompt"], "score": round(i["score"], 2)} for i in items
+    ]
+
 
     # TODO: email results to user
     loops_api_key = os.environ.get("LOOPS_API_KEY")
@@ -168,16 +172,16 @@ async def run_promptbreeder_in_background(
         headers={
             "Authorization": "Bearer " + loops_api_key
         },
-        data={
+        json={
             "transactionalId": loops_transactional_id,
             "email": email,
             "dataVariables": {
                 "experiment_name": config.experiment_name.split("_", 1)[1],
                 "num_generations": config.generations,
                 "population_size": config.population_size,
-                "best_score": best_score,
+                "best_score": round(best_score, 2),
                 "best_prompt": best_prompt,
-                "improvement_over_baseline": best_score - baseline_score,
+                "improvement_over_baseline": round(best_score - baseline_score, 2),
                 "all_prompts": json.dumps({"prompts": items}, indent=4)
             }
         }

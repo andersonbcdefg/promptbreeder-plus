@@ -349,7 +349,7 @@ async def run_task(
         for inp in df[task.input_column]:
             messages = []
             if use_json_mode:
-                messages.append({"role": "system", "content": "Respond only with JSON."})
+                messages.append({"role": "system", "content": 'Respond only with JSON. Your answer should always go last, and be in the "answer" field. Other fields can be used beforehand for context/reasoning.'})
             messages.append({"role": "user", "content": "INSTRUCTION: " + prompt + "\n\nTASK: " + inp})
             queries.append(messages)
 
