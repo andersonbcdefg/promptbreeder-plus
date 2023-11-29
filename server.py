@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 import tempfile
 from fastapi import BackgroundTasks
 from main import (
+    ExperimentTracker,
     PromptBreederConfig,
     initialize,
     calibrate_model,
@@ -135,20 +136,20 @@ async def run_promptbreeder_in_background(
     if not os.path.exists(f"logs/{config.experiment_name}"):
         os.makedirs(f"logs/{config.experiment_name}")
 
+    # tracker
+    tracker = ExperimentTracker(config)
+
     # Calibrate model, if using
     if config.use_heuristic_model:
-        scoring_model = await calibrate_model(config)
-    else:
-        scoring_model = None
+        scoring_model = await calibrate_model(tracker)
 
     # Initialize
-    initial_generation = await initialize(config)
+    initial_generation = await initialize(tracker.config)
 
     # Run
     items = await run_promptbreeder(
-        initial_generation, 
-        scoring_model,
-        config
+        initial_generation,
+        tracker,
     )
 
     # get best prompt, baseline, improvement

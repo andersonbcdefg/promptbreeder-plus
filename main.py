@@ -1,10 +1,12 @@
 # import asyncio
 import os
 import json
+import copy
 import fire
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal, Union, Optional
+
 
 import yaml
 from rich.status import Status
@@ -58,13 +60,26 @@ class PromptBreederConfig:
         if self.diversity_factor and not self.use_heuristic_model:
             logger.warning("Diversity factor is set, but heuristic model is not being used. Diversity will be ignored.")
 
+@dataclass
+class ExperimentTracker:
+    """
+    Tracks all objects over the course of an experiment (so we don't have to log everything to disk on server,
+    or pass around multiple objects between functions).
+    """
+    config: PromptBreederConfig
+    scoring_model: Optional[ScoringModel] = None
+    generations: list[Generation] = field(default_factory=list)
+    scored_prompts: list[dict] = field(default_factory=list)
+    positive_exemplars: list[dict] = field(default_factory=list)
+    negative_exemplars: list[dict] = field(default_factory=list)
 
 async def calibrate_model(
-    config: PromptBreederConfig,
+    tracker: ExperimentTracker,
 ):
     print("Calibrating scoring model with random prompts...")
-    task = config.task
-    scoring_model = ScoringModel()
+    task = tracker.config.task
+    if tracker.scoring_model is None:
+        tracker.scoring_model = ScoringModel(diversity_factor=tracker.config.diversity_factor)
     initial_task_meta_prompts = []
     for i in range(225):
         mutation_prompt = random.choice(MUTATION_PROMPTS)
@@ -101,14 +116,13 @@ async def calibrate_model(
             calibration_generation,
             task,
             num_samples=8,
-            model_name=config.model_name,
+            model_name=tracker.config.model_name,
             status=status,
         )
-        
-        scoring_model.update(calibration_generation.units, log_dir=f"logs/{config.experiment_name}", status=status)
-        assert scoring_model.Xs is not None, "Xs should not be None after calibration"
-        
-        return scoring_model
+
+        tracker.generations.append(copy.deepcopy(calibration_generation))
+        tracker.scoring_model.update(calibration_generation.units, log_dir=f"logs/{tracker.config.experiment_name}", status=status)
+        assert tracker.scoring_model.Xs is not None, "Xs should not be None after calibration"
 
 async def initialize(
     config: PromptBreederConfig,
@@ -204,10 +218,10 @@ async def rank_final_prompts(
 
 async def run_promptbreeder(
     initial_generation: Generation,
-    scoring_model: Optional[ScoringModel],
-    config: PromptBreederConfig,
+    tracker: ExperimentTracker,
 ):
-    task = config.task
+    task = tracker.config.task
+    config = tracker.config
 
     # Run the evolution
     with Status("Starting PromptBreeder...") as status:
@@ -221,11 +235,12 @@ async def run_promptbreeder(
                 model_name=config.model_name,
                 status=status,
             )
+            tracker.generations.append(copy.deepcopy(current_generation))
             print(f"=== GENERATION {i} ===")
             print(f"Best score: {max([u.fitness for u in current_generation.units]):.3f}")
             print(f"Average score: {sum([u.fitness for u in current_generation.units]) / len(current_generation.units):.3f}")
-            if scoring_model is not None:
-                metrics = scoring_model.update(current_generation.units, log_dir=f"logs/{config.experiment_name}", status=status)
+            if tracker.scoring_model is not None:
+                metrics = tracker.scoring_model.update(current_generation.units, log_dir=f"logs/{config.experiment_name}", status=status)
                 if metrics is not None:
                     logger.info(f"Metrics: {metrics}")
             current_generation.save_to_file(f"logs/{config.experiment_name}/gen_{i}.json")
@@ -233,7 +248,7 @@ async def run_promptbreeder(
             current_generation = await step_generation(
                 current_generation, 
                 task, 
-                scoring_model, 
+                tracker.scoring_model, 
                 oversample_factor = config.oversample_factor
             )
 
@@ -246,17 +261,18 @@ async def run_promptbreeder(
             model_name=config.model_name,
             status=status,
         )
+        tracker.generations.append(copy.deepcopy(current_generation))
         print (f"=== FINAL GENERATION ===")
         print(f"Best score: {max([u.fitness for u in current_generation.units]):.3f}")
         print(f"Average score: {sum([u.fitness for u in current_generation.units]) / len(current_generation.units):.3f}")
-        if scoring_model is not None:
-            metrics = scoring_model.update(current_generation.units, log_dir=f"logs/{config.experiment_name}", status=status)
+        if tracker.scoring_model is not None:
+            metrics = tracker.scoring_model.update(current_generation.units, log_dir=f"logs/{config.experiment_name}", status=status)
             if metrics is not None:
                 logger.info(f"Metrics: {metrics}")
         current_generation.save_to_file(f"logs/{config.experiment_name}/gen_{i + 1}_final.json")
 
         # rank the final prompts
-        items = await rank_final_prompts(config, status=status)
+        items = await rank_final_prompts(tracker.config, status=status)
     
     return items
 
@@ -272,20 +288,20 @@ async def main(config: Union[PromptBreederConfig, str]):
     if not os.path.exists(f"logs/{config.experiment_name}"):
         os.makedirs(f"logs/{config.experiment_name}")
 
+    # set up experiment tracker
+    tracker = ExperimentTracker(config=config)
+
     # Calibrate model, if using
     if config.use_heuristic_model:
-        scoring_model = await calibrate_model(config)
-    else:
-        scoring_model = None
+        await calibrate_model(tracker)
 
     # Initialize
-    initial_generation = await initialize(config)
+    initial_generation = await initialize(tracker.config)
 
     # Run
     items = await run_promptbreeder(
         initial_generation, 
-        scoring_model,
-        config
+        tracker
     )
 
 

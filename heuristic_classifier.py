@@ -9,9 +9,9 @@ from rich.status import Status
 from typing import Optional
 
 class ScoringModel:
-    def __init__(self, diversity_weight = 0.5, embedding_model_name: str = "bge-micro-v2"):
+    def __init__(self, diversity_factor = 0.5, embedding_model_name: str = "bge-micro-v2"):
         self.generation = 0
-        self.diversity_weight = diversity_weight
+        self.diversity_factor = diversity_factor
         self.model = PassiveAggressiveRegressor(
             epsilon=0.05,
             # early_stopping=True,
@@ -94,7 +94,7 @@ class ScoringModel:
 
         # now, compute diversity scores (normalized to between 0 and 1)
         diversity_scores = np.add(-np.mean(similarity_matrix, axis=1), 1) / 2
-        weights = (1 - self.diversity_weight) * fitness_scores  + self.diversity_weight * diversity_scores
+        weights = (1 - self.diversity_factor) * fitness_scores  + self.diversity_factor * diversity_scores
         weights = weights / np.sum(weights)
 
         # total weight
