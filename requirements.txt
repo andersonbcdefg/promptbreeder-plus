@@ -1,3 +1,4 @@
+fire
 aiohttp
 tiktoken==0.5.1
 tqdm
