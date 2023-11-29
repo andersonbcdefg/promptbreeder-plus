@@ -64,7 +64,7 @@ class ScoringModel:
                 plt.close()
 
         else:
-            print("Heuristic model not trained yet, skipping prediction error measurement.")
+            print("Heuristic model not trained yet, skipping metrics.")
             metrics = None
         # now, update the model
         status.update("Updating scoring model...")
