@@ -19,6 +19,7 @@ from rich.status import Status
 
 from .embeddings.onnx_backend import ONNXEmbeddingModel
 
+from .prompts import JSON_MODE_SYSTEM_PROMPT
 # import matplotlib.pyplot as plt
 from .logger import logger
 from .openai_utils import StatusTracker, run_chat_queries_async
@@ -348,24 +349,7 @@ async def run_task(
         for inp in df[task.input_column]:
             messages = []
             if use_json_mode:
-                messages.append({
-                    "role": "system", 
-                    "content": (
-                        'You must respond to every message with only JSON. '
-                        'The JSON should have up to 2 keys: "reasoning" and "answer". '
-                        'The "reasoning" field is optional, and goes first. It can contain any step-by-step thinking, '
-                        'context, qualifiers, etc. that you want to provide. If not applicable, omit it. '
-                        'The "answer" field is required. It should contain only your answer, '
-                        'which must be a primitive type, not a JSON object. The "answer" field should be last.\n\n'
-                        'Example 1:\n{\n\t"reasoning": "6 mice + 7 mice = 13 mice, and each mice has 3 pieces of cheese, so that is '
-                        '13 mice * 3 pieces of cheese = 39 pieces of cheese",\n\t"answer": "39"\n}\n\n'
-                        'Example 2:\n{\n\t"answer": "A"\n}\n\n'
-                        'Example 3:\n{\n\t"reasoning": "The capital of France is Paris, and the Colosseum is in Rome, not Paris. '
-                        'Therefore, the answer is B. False.",\n\t"answer": "B"\n}\n\n'
-                        'Example 4:\n{\n\t"reasoning": "The comment uses offensive language, therefore it is toxic.",'
-                        '\n\t"answer": "toxic"\n}\n\n'
-                        'Example 5:\n{\n\t"answer": "helpful"\n}\n\n'
-                    )})
+                messages.append({"role": "system", "content": JSON_MODE_SYSTEM_PROMPT})
             messages.append({"role": "user", "content": "INSTRUCTION: " + prompt + "\n\nTASK: " + inp})
             queries.append(messages)
 
@@ -380,6 +364,7 @@ async def run_task(
         max_tokens_per_minute=100_000,
         max_requests_per_minute=500,
         model_name=model,
+        cache_file="scoring_cache.db",
         json_mode=use_json_mode,
         max_new_tokens=task.max_tokens,
         callback=partial(cb, base_status=base_status, num_queries=len(queries))

@@ -14,7 +14,7 @@ from rich.status import Status
 from .evolution import Generation, Unit, score_generation, step_generation
 from .logger import logger
 from .openai_utils import instructions_to_message_lists, run_chat_queries_async
-from .prompts import MUTATION_PROMPTS, THINKING_STYLES
+from .prompts import MUTATION_PROMPTS, THINKING_STYLES, get_meta_mutation_prompt
 from .scoring_model import ScoringModel
 from .task import TASKS, Task, run_task
 
@@ -99,17 +99,18 @@ async def calibrate_model(
     if tracker.scoring_model is None:
         tracker.scoring_model = ScoringModel(diversity_factor=tracker.config.diversity_factor)
     initial_task_meta_prompts = []
-    for i in range(225):
+    for i in range(150):
         mutation_prompt = random.choice(MUTATION_PROMPTS)
         thinking_style = random.choice(THINKING_STYLES)
-        initial_task_meta_prompts.append(
-            f"{mutation_prompt} {thinking_style}\n\nINSTRUCTION: {task.description}\n\nRespond with JUST your modified instruction (no need to label it as INSTRUCTION)."
-        )
+        meta_prompt = get_meta_mutation_prompt(mutation_prompt, task.description, thinking_style=thinking_style)
+        initial_task_meta_prompts.append(meta_prompt)
+
     with Status("Calibrating scoring model...") as status:
         calibration_prompts, usage = await run_chat_queries_async(
             prompts=instructions_to_message_lists(initial_task_meta_prompts),
             max_tokens_per_minute=tracker.config.max_tokens_per_minute,
             max_requests_per_minute=tracker.config.max_requests_per_minute,
+            json_mode=True,
             model_name="gpt-3.5-turbo",
             max_new_tokens=512,
             max_attempts=10,
@@ -117,9 +118,14 @@ async def calibrate_model(
                 f"Calibrating scoring model... ({status_tracker.num_tasks_succeeded}/{len(initial_task_meta_prompts)})"
             ),
         )
-        calibration_prompts = [
-            p for p in calibration_prompts if p is not None
-        ]
+        parsed = []
+        for p in calibration_prompts:
+            try:
+                parsed.append(json.loads(p)["instruction"])
+            except:
+                parsed.append(task.description)
+        calibration_prompts = parsed
+        print("A few examples of prompts for calibration: \n- " + "\n- ".join(calibration_prompts[:10]))
         mutation_prompts = ["" for _ in calibration_prompts]
         calibration_generation = Generation(
             step=0,
@@ -133,7 +139,7 @@ async def calibrate_model(
         result = await score_generation(
             calibration_generation,
             task,
-            num_samples=8,
+            num_samples=6,
             model_name=tracker.config.model_name,
             status=status,
         )
@@ -157,14 +163,15 @@ async def initialize(
     for i in range(config.population_size):
         mutation_prompt = random.choice(MUTATION_PROMPTS)
         thinking_style = random.choice(THINKING_STYLES)
-        initial_task_meta_prompts.append(
-            f"{mutation_prompt} {thinking_style}\n\nINSTRUCTION: {task.description}\n\nRespond with JUST your modified instruction (no need to label it as INSTRUCTION)."
-        )
+        meta_prompt = get_meta_mutation_prompt(mutation_prompt, task.description, thinking_style=thinking_style)
+        initial_task_meta_prompts.append(meta_prompt)
+
     with Status("Creating initial task prompts...") as status:
         initial_task_prompts, usage = await run_chat_queries_async(
             prompts=instructions_to_message_lists(initial_task_meta_prompts),
             max_tokens_per_minute=config.max_tokens_per_minute,
             max_requests_per_minute=config.max_requests_per_minute,
+            json_mode=True,
             model_name="gpt-3.5-turbo",
             max_new_tokens=512,
             max_attempts=10,
@@ -172,9 +179,16 @@ async def initialize(
                 f"Creating initial task prompts... ({status_tracker.num_tasks_succeeded}/{len(initial_task_meta_prompts)})"
             ),
         )
-        initial_task_prompts = [
-            p if p is not None else task.description for p in initial_task_prompts
-        ]
+
+        parsed = []
+        for p in initial_task_prompts:
+            try:
+                parsed.append(json.loads(p)["instruction"])
+            except:
+                parsed.append(task.description)
+        initial_task_prompts = parsed
+
+        print("Initial task prompts:\n-" + "\n -".join(initial_task_prompts))
 
         status.update("Creating initial mutation prompts...")
         initial_mutation_prompts = random.choices(MUTATION_PROMPTS, k=config.population_size)
@@ -189,17 +203,17 @@ async def initialize(
         return initial_generation
 
 async def rank_final_prompts(
-    config: PromptBreederConfig,
+    tracker: ExperimentTracker,
     status: Optional[Status] = None
 ):
+    config = tracker.config
     task = config.task
     
     top_prompts = set()
     # get the top prompts from each generation
-    for file in os.listdir(f"logs/{config.experiment_name}"):
-        if file.startswith("gen_") and file.endswith(".json"):
-            units = json.load(open(f"logs/{config.experiment_name}/{file}"))["units"]
-            top_prompts.update([u["task_prompt"] for u in units[:2]])
+    for generation in tracker.generations:
+        units = sorted(generation.units, key=lambda x: x.fitness, reverse=True)
+        top_prompts.update([u.task_prompt for u in units[:2]])
     # also add the initial task description--we can measure how much we improved performance
     top_prompts.add(task.description)
     top_prompts = list(top_prompts)
@@ -274,10 +288,15 @@ async def run_promptbreeder(
                     logger.info(f"Metrics: {metrics}")
             tracker.save(f"logs/{config.experiment_name}/experiment.json")
             status.update(f"Evolving generation {i + 1}...")
+            provide_exemplars = True if len(tracker.positive_exemplars) > 0 and len(tracker.negative_exemplars) > 0 else False
             current_generation = await step_generation(
                 current_generation, 
                 task, 
-                tracker.scoring_model, 
+                exemplars=({
+                    "positive": tracker.positive_exemplars,
+                    "negative": tracker.negative_exemplars,
+                } if provide_exemplars else None),
+                scoring_model=tracker.scoring_model, 
                 oversample_factor = config.oversample_factor
             )
 
@@ -305,7 +324,7 @@ async def run_promptbreeder(
                 logger.info(f"Metrics: {metrics}")
         
         # rank the final prompts
-        items = await rank_final_prompts(tracker.config, status=status)
+        items = await rank_final_prompts(tracker, status=status)
         tracker.final_prompts = items
 
         tracker.save(f"logs/{config.experiment_name}/experiment.json")

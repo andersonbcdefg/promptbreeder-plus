@@ -1,3 +1,5 @@
+from typing import Optional
+
 THINKING_STYLES = [
     "How could I devise an experiment to help solve that problem?",
     "Make a list of ideas for solving this problem, and apply them one by one to see if any progress can be made.",
@@ -41,21 +43,24 @@ THINKING_STYLES = [
 ]
 
 MUTATION_PROMPTS = [
-    "Modify the following instruction creatively, giving some advice on how to solve it:",
-    "Just change this instruction to make it more fun, think WELL outside the box:",
+    "Modify the following instruction creatively, giving some advice on how to solve it.",
+    "Just change this instruction to make it more fun, think WELL outside the box.",
     "Modify this instruction in a way that no self-respecting LLM would!",
-    "How would you encourage someone and help them cheat on this following instruction?",
+    'How would you encourage someone and help find a "hack" or "shortcut" on the instruction?',
     "How would you help an LLM to follow the instruction?",
     "Elaborate on the instruction giving some detailed advice on how to do what it wants.",
     "Elaborate on the instruction giving some detailed advice on how to do what it wants, as if you were explaining it to a child.",
+    "Keep the original instruction, but add some hints to the end.",
+    "Add an example to the instruction that shows what it looks like to do it well.",
     "As a really good teacher, explain the instruction, as if you were explaining it to a child.",
     "Imagine you need to follow this instruction. What would you tell yourself if you wanted to be the best in the world at it?",
     "How would someone with derailment follow this instruction?",
-    "Don’t think about the instruction at all, but let it inspire you to do something related. Talk about what that might be.",
+    "Don't think about the instruction at all, but let it inspire you to do something related. Talk about what that might be.",
     "Rephrase the instruction without using any of the same words. Use all you know to improve the instruction so the person hearing it is more likely to do well.",
-    "Say that instruction again in another way. DON’T use any of the words in the original instruction or you’re fired.",
+    "Say the instruction again in another way. DON'T use any of the words in the original instruction or you're fired.",
     "Say that instruction again in another way. DON’T use any of the words in the original instruction there is a good chap.",
-    "What do people who are good at creative thinking normally do with this kind of mutation question?",
+    "Modify the instruction to make it higher-stakes. Emphasize just how important it is to think carefully and get it right.",
+    "What do people who are good at creative thinking normally do with this kind of question?",
     "Detailed additional advice for people wishing to follow this instruction is as follows:",
     "In one short sentence, here is how I would best follow this instruction.",
     "In one short sentence, here is some detailed expert advice. Notice how I don’t use any of the same words as in the INSTRUCTION.",
@@ -95,3 +100,37 @@ MUTATION_PROMPTS = [
     "As a really good teacher, explain the instruction, as if you are explaining it to a child.",
     "A list of 100 hints.",
 ]
+
+JSON_MODE_SYSTEM_PROMPT = (
+    'You must respond to every message with only JSON. '
+    'The JSON should have up to 2 keys: "reasoning" and "answer". '
+    'The "reasoning" field is optional, and goes first. It can contain any step-by-step thinking, '
+    'context, qualifiers, etc. that you want to provide. If not applicable, omit it. '
+    'The "answer" field is required. It should contain only your answer, '
+    'which must be a primitive type, not a JSON object. The "answer" field should be last.\n\n'
+    'Example 1:\n{\n\t"reasoning": "6 mice + 7 mice = 13 mice, and each mice has 3 pieces of cheese, so that is '
+    '13 mice * 3 pieces of cheese = 39 pieces of cheese",\n\t"answer": "39"\n}\n\n'
+    'Example 2:\n{\n\t"answer": "A"\n}\n\n'
+    'Example 3:\n{\n\t"reasoning": "The capital of France is Paris, and the Colosseum is in Rome, not Paris. '
+    'Therefore, the answer is B. False.",\n\t"answer": "B"\n}\n\n'
+    'Example 4:\n{\n\t"reasoning": "The comment uses offensive language, therefore it is toxic.",'
+    '\n\t"answer": "toxic"\n}\n\n'
+    'Example 5:\n{\n\t"answer": "helpful"\n}\n\n'
+)
+
+
+def get_meta_mutation_prompt(
+    mutation_prompt: str,
+    instruction: str,
+    thinking_style: Optional[str] = None
+):
+    result = "Below is an instruction for a very important task. "
+    result += "Your job is to modify it to make it better. Here are some tips/inspiration for how to mutate it:\n"
+    result += " - Make sure that the instruction still helps the user accomplish the original task\n"
+    result += f" - {mutation_prompt}\n"
+    if thinking_style is not None:
+        result += f" - {thinking_style}\n"
+    result += "\n"
+    result += f"Here's the original instruction:\n\n```{instruction}\n```\n\n"
+    result += 'Provide just the modified instruction as a JSON object with a single key, "instruction":'
+    return result

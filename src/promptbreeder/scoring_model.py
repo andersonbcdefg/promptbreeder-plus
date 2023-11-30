@@ -1,7 +1,5 @@
-import os
 from typing import Optional
 
-import matplotlib.pyplot as plt
 import numpy as np
 from sklearn.linear_model import PassiveAggressiveRegressor
 
@@ -49,19 +47,19 @@ class ScoringModel:
                 "r_squared": r_squared,
             }
             # scatterplot
-            if log_dir is not None:
-                regression_line = np.poly1d(np.polyfit(preds, y, 1))
-                if not os.path.exists(os.path.join(log_dir, "plots")):
-                    os.makedirs(os.path.join(log_dir, "plots"))
-                plots_dir = os.path.join(log_dir, "plots")
-                plt.scatter(preds, y, color="blue", alpha=0.5)
-                plt.plot(preds, regression_line(preds), color="red")
-                plt.xlabel("Predicted fitness")
-                plt.ylabel("Actual fitness")
-                plt.title(f"Scoring model performance (MAE: {mae:.3f}, R^2: {r_squared:.3f})")
-                plt.savefig(f"{plots_dir}/scoring_model_gen_{self.generation}.png")
-                plt.clf()
-                plt.close()
+            # if log_dir is not None:
+            #     regression_line = np.poly1d(np.polyfit(preds, y, 1))
+            #     if not os.path.exists(os.path.join(log_dir, "plots")):
+            #         os.makedirs(os.path.join(log_dir, "plots"))
+            #     plots_dir = os.path.join(log_dir, "plots")
+            #     plt.scatter(preds, y, color="blue", alpha=0.5)
+            #     plt.plot(preds, regression_line(preds), color="red")
+            #     plt.xlabel("Predicted fitness")
+            #     plt.ylabel("Actual fitness")
+            #     plt.title(f"Scoring model performance (MAE: {mae:.3f}, R^2: {r_squared:.3f})")
+            #     plt.savefig(f"{plots_dir}/scoring_model_gen_{self.generation}.png")
+            #     plt.clf()
+            #     plt.close()
 
         else:
             print("Heuristic model not trained yet, skipping metrics.")

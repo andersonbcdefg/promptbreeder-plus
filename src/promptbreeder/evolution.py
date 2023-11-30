@@ -10,11 +10,13 @@ from rich.status import Status
 
 from .embeddings.onnx_backend import ONNXEmbeddingModel
 from .openai_utils import get_completion_simple_async
+from .utils import get_from_json
 
 # import pandas as pd
 from .prompts import (
     MUTATION_PROMPTS,
     THINKING_STYLES,
+    get_meta_mutation_prompt
 )
 from .task import Task, run_task
 
@@ -76,6 +78,7 @@ async def fresh_prompt(
     unit: Unit,
     generation: Optional[Generation],
     task: Task,
+    exemplars: dict = None,
     model_name: Literal[
         "gpt-3.5-turbo", "gpt-4-turbo", "gpt-4", "mistral"
     ] = "gpt-3.5-turbo",
@@ -88,7 +91,7 @@ async def fresh_prompt(
     new_prompt = await get_completion_simple_async(
         meta_prompt,
         model_name=model_name,
-        max_new_tokens=256,
+        max_new_tokens=512,
         temperature=0.5,
     )
 
@@ -101,22 +104,27 @@ async def fresh_prompt(
     )
 
 
-async def direct_mutation(unit: Unit, generation: Generation, task: Task):
+async def direct_mutation(unit: Unit, generation: Generation, task: Task, exemplars: dict = None):
     """
     Directly mutate the prompt with the mutation prompt.
     """
-    meta_prompt = (
-        unit.mutation_prompt
-        + "\n\n INSTRUCTION: "
-        + unit.task_prompt
-        + "\n\nProvide the new instruction. The instruction should be concise and generally applicable."
-    )
+    # meta_prompt = (
+    #     unit.mutation_prompt
+    #     + "\n\n INSTRUCTION: "
+    #     + unit.task_prompt
+    #     + "\n\nProvide the new instruction. The instruction should be concise and generally applicable."
+    # )
+    meta_prompt = get_meta_mutation_prompt(unit.mutation_prompt, unit.task_prompt)
     new_prompt = await get_completion_simple_async(
         meta_prompt,
         model_name="gpt-3.5-turbo",
-        max_new_tokens=256,
+        json_mode = True,
+        max_new_tokens=512,
         temperature=0.5,
     )
+    # the meta mutation prompt asks for JSON object with "instruction" key
+    new_prompt = get_from_json(new_prompt, "instruction", fallback=task.description)
+
     # we mutate the task prompt, and retain the mutation prompt
     return Unit(
         task_prompt=new_prompt,
@@ -126,7 +134,7 @@ async def direct_mutation(unit: Unit, generation: Generation, task: Task):
     )
 
 
-async def eda_mutation(unit: Unit, generation: Generation, task: Task):
+async def eda_mutation(unit: Unit, generation: Generation, task: Task, exemplars: dict = None):
     """
     Use EDA to mutate the prompt.
     """
@@ -148,13 +156,13 @@ async def eda_mutation(unit: Unit, generation: Generation, task: Task):
     meta_prompt = (
         "Here is a variety of instructions for how to complete a task:\n"
         + "\n".join([" - " + p for p in filtered_task_prompts])
-        + "\n\nGenerate a new, substantially different, better instruction based on these. "
+        + "\n\nGenerate a new, substantially different instruction inspired by these, but much better. "
        +  "The instruction should be concise and generally applicable."
     )
     new_prompt = await get_completion_simple_async(
         meta_prompt,
         model_name="gpt-3.5-turbo",
-        max_new_tokens=256,
+        max_new_tokens=512,
         temperature=0.5,
     )
     # we mutate the task prompt, and retain the mutation prompt
@@ -166,7 +174,7 @@ async def eda_mutation(unit: Unit, generation: Generation, task: Task):
     )
 
 
-async def eda_ranked_mutation(unit: Unit, generation: Generation, task: Task):
+async def eda_ranked_mutation(unit: Unit, generation: Generation, task: Task, exemplars: dict = None):
     # get diverse list of current generation
     embedding_model = ONNXEmbeddingModel(model_name="bge-micro-v2")
     all_task_prompts = [(u.task_prompt, u.fitness) for u in generation.units]
@@ -194,7 +202,7 @@ async def eda_ranked_mutation(unit: Unit, generation: Generation, task: Task):
     new_prompt = await get_completion_simple_async(
         meta_prompt,
         model_name="gpt-3.5-turbo",
-        max_new_tokens=256,
+        max_new_tokens=512,
         temperature=0.5,
     )
     # we mutate the task prompt, and retain the mutation prompt
@@ -206,7 +214,7 @@ async def eda_ranked_mutation(unit: Unit, generation: Generation, task: Task):
     )
 
 
-async def lineage_mutation(unit: Unit, generation: Generation, task: Task):
+async def lineage_mutation(unit: Unit, generation: Generation, task: Task, exemplars: dict = None):
     # if there's no history, this won't work well
     if len(generation.lineage) < 3:
         # YOU BIG DUMMY YOU NEEDED TO AWAIT THIS
@@ -223,7 +231,7 @@ async def lineage_mutation(unit: Unit, generation: Generation, task: Task):
     new_prompt = await get_completion_simple_async(
         meta_prompt,
         model_name="gpt-3.5-turbo",
-        max_new_tokens=256,
+        max_new_tokens=512,
         temperature=0.5,
     )
     # we mutate the task prompt, and retain the mutation prompt
@@ -235,24 +243,22 @@ async def lineage_mutation(unit: Unit, generation: Generation, task: Task):
     )
 
 
-async def fresh_mutation_prompt(unit: Unit, generation: Generation, task: Task):
+async def fresh_mutation_prompt(unit: Unit, generation: Generation, task: Task, exemplars: dict = None):
     thinking_style = random.choice(THINKING_STYLES)
     sampled_mutation_prompt = random.choice(MUTATION_PROMPTS)
     new_mutation_prompt = sampled_mutation_prompt + " " + thinking_style
 
-    meta_prompt = (
-        new_mutation_prompt
-        + "\n\nINSTRUCTION: "
-        + unit.task_prompt
-        + "\n\nProvide the revised instruction. It should be concise and generally applicable."
-    )
+    meta_prompt = get_meta_mutation_prompt(new_mutation_prompt, unit.task_prompt)
 
     new_prompt = await get_completion_simple_async(
         meta_prompt,
         model_name="gpt-3.5-turbo",
-        max_new_tokens=256,
+        json_mode = True,
+        max_new_tokens=512,
         temperature=0.5,
     )
+    # the meta mutation prompt asks for JSON object with "instruction" key
+    new_prompt = get_from_json(new_prompt, "instruction", fallback=task.description)
 
     return Unit(
         task_prompt=new_prompt,
@@ -262,7 +268,7 @@ async def fresh_mutation_prompt(unit: Unit, generation: Generation, task: Task):
     )
 
 
-async def first_order_hypermutation(unit: Unit, generation: Generation, task: Task):
+async def first_order_hypermutation(unit: Unit, generation: Generation, task: Task, exemplars: dict = None):
     meta_mutation_prompt = (
         "Please paraphrase and improve the following instruction, adding any additional "
         "explanation or details that could be helpful for someone trying to follow it.\n\n"
@@ -271,24 +277,22 @@ async def first_order_hypermutation(unit: Unit, generation: Generation, task: Ta
     new_mutation_prompt = await get_completion_simple_async(
         meta_mutation_prompt,
         model_name="gpt-3.5-turbo",
-        max_new_tokens=256,
+        max_new_tokens=512,
         temperature=0.5,
     )
 
     # use the new mutation prompt to mutate the task prompt
-    meta_prompt = (
-        new_mutation_prompt
-        + "\n\n INSTRUCTION: "
-        + unit.task_prompt
-        + "\n\nProvide the new instruction."
-    )
+    meta_prompt = get_meta_mutation_prompt(new_mutation_prompt, unit.task_prompt)
 
     new_prompt = await get_completion_simple_async(
         meta_prompt,
         model_name="gpt-3.5-turbo",
-        max_new_tokens=256,
+        json_mode = True,
+        max_new_tokens=512,
         temperature=0.5,
     )
+    # the meta mutation prompt asks for JSON object with "instruction" key
+    new_prompt = get_from_json(new_prompt, "instruction", fallback=task.description)
 
     # both the mutation and task prompt have been mutated
     return Unit(
@@ -298,11 +302,12 @@ async def first_order_hypermutation(unit: Unit, generation: Generation, task: Ta
         origin="first_order_hypermutation",
     )
 
-async def lamarckian_mutation(unit: Unit, generation: Generation, task: Task):
+async def lamarckian_mutation(unit: Unit, generation: Generation, task: Task, exemplars: dict = None):
     # get an exemplar for the task
-    exemplars = task.exemplars
-    if not exemplars:
+    if not exemplars and not task.exemplars:
         return await first_order_hypermutation(unit, generation, task)
+    elif not exemplars:
+        exemplars = task.exemplars
     exemplar = random.choice(exemplars)
     meta_prompt = (
         "I gave a friend some really great instructions to solve a problem. "
@@ -310,15 +315,19 @@ async def lamarckian_mutation(unit: Unit, generation: Generation, task: Task):
         f"PROBLEM: {exemplar['input']}\n\nSOLUTION: {exemplar['output']}\n\n"
         "Please provide the instructions I gave to my friend that helped her work this out correctly. "
         "The instructions should be concise and general enough to be applicable to other similar problems, "
-        "rather than specific to the exact problem my friend solved."
+        "rather than specific to the exact problem my friend solved. "
+        'Answer with JSON, with your new instruction in the "instruction" key.'
     )
 
     new_prompt = await get_completion_simple_async(
         meta_prompt,
         model_name="gpt-3.5-turbo",
-        max_new_tokens=256,
+        json_mode = True,
+        max_new_tokens=512,
         temperature=0.5,
     )
+    # the meta mutation prompt asks for JSON object with "instruction" key
+    new_prompt = get_from_json(new_prompt, "instruction", fallback=task.description)
 
     # only the task prompt has been mutated
     return Unit(
@@ -328,6 +337,40 @@ async def lamarckian_mutation(unit: Unit, generation: Generation, task: Task):
         origin="lamarckian_mutation",
     )
 
+async def learn_from_mistake(unit: Unit, generation: Generation, task: Task, exemplars: dict = None):
+    if not exemplars:
+        return await first_order_hypermutation(unit, generation, task)
+    negative_exemplar = random.choice(exemplars["negative"])
+    meta_prompt = (
+        "My friend was trying to solve this problem, but made a critical mistake that led to the wrong answer. "
+        f"Here are the instructions I gave him: {task.description}\n\n"
+        f"My friend applied these instructions to this input: {negative_exemplar['input']}\n\n"
+        f"He came up with this solution: {negative_exemplar['model_output']}\n\n"
+        f"However, the correct value for the answer was: {negative_exemplar['gold_answer']}\n\n"
+        "Provide a modified instruction that would have helped my friend get the right answer. "
+        "You can tweak it, make a new one from scratch, and/or add definitions/details/hints for clarification. "
+        "The new instructions should be concise and general enough to be applicable to similar problems, "
+        "rather than specific to the exact input my friend tried to solve. "
+        'Answer with JSON, with your new instruction in the "instruction" key.'
+    )
+
+    new_prompt = await get_completion_simple_async(
+        meta_prompt,
+        model_name="gpt-3.5-turbo",
+        json_mode = True,
+        max_new_tokens=512,
+        temperature=0.5,
+    )
+    # the meta mutation prompt asks for JSON object with "instruction" key
+    new_prompt = get_from_json(new_prompt, "instruction", fallback=task.description)
+
+    # only the task prompt has been mutated
+    return Unit(
+        task_prompt=new_prompt,
+        mutation_prompt=unit.mutation_prompt,
+        generation=unit.generation + 1,
+        origin="learn_from_mistake",
+    )
 
 async def apply_random_mutation(unit: Unit, generation: Generation, task: Task):
     """
@@ -343,6 +386,7 @@ async def apply_random_mutation(unit: Unit, generation: Generation, task: Task):
             fresh_mutation_prompt,
             first_order_hypermutation,
             lamarckian_mutation,
+            learn_from_mistake,
         ]
     )
     new_unit = await mutation_operator(unit, generation, task)
@@ -378,7 +422,7 @@ async def score_generation(
     return result # can get out positive/negative examples from this
 
 
-async def mutate_units(units: list[Unit], generation: Generation, task: Task):
+async def mutate_units(units: list[Unit], generation: Generation, task: Task, exemplars: dict = None):
     new_unit_tasks = [apply_random_mutation(u, generation, task) for u in units]
     new_units = await asyncio.gather(*new_unit_tasks)
     return new_units
@@ -387,6 +431,7 @@ async def mutate_units(units: list[Unit], generation: Generation, task: Task):
 async def step_generation(
     generation: Generation, 
     task: Task, 
+    exemplars: dict = None, # positive/negative examples from past generations
     scoring_model = None, 
     oversample_factor: float = 1.0
 ):
