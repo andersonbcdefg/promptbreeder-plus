@@ -102,6 +102,12 @@ MISTRAL = APIModel(
     api_key_env_var="ANYSCALE_API_KEY",
     request_timeout=45,
 )
+MIXTRAL = APIModel(
+    name="mistralai/Mixtral-8x7B-Instruct-v0.1",
+    api_base="https://api.endpoints.anyscale.com/v1",
+    api_key_env_var="ANYSCALE_API_KEY",
+    request_timeout=60
+)
 
 
 @dataclass
@@ -397,7 +403,7 @@ async def run_chat_queries_async(
     max_requests_per_minute: int,
     temperature: float = 0.0,
     json_mode: bool = False,
-    model_name: Literal["gpt-3.5-turbo", "gpt-4-turbo", "gpt4", "mistral"] = None,
+    model_name: Literal["gpt-3.5-turbo", "gpt-4-turbo", "gpt4", "mistral", "mixtral"] = None,
     callback: Optional[Callable] = None,  # should take in (id, messages, response)
     max_new_tokens: Optional[int] = None,
     max_attempts: int = 5,
@@ -409,6 +415,7 @@ async def run_chat_queries_async(
         "gpt-4-turbo": GPT4_TURBO,
         "gpt4": GPT4,
         "mistral": MISTRAL,
+        "mixtral": MIXTRAL
     }.get(model_name, None)
     if cache_file is not None:
         cache = SqliteCache(cache_file)
