@@ -31,6 +31,7 @@ class PromptBreederConfig:
     num_final_scoring_samples: int
     random_seed: int
     use_heuristic_model: bool = True
+    few_shot_examples: int = 0
     diversity_factor: Optional[float] = 0.5
     oversample_factor: Optional[int] = 4
     max_requests_per_minute: int = field(default_factory=lambda: int(os.environ.get("MAX_REQUESTS_PER_MINUTE", 1000)))

@@ -150,7 +150,7 @@ class APIRequest:
         if cache is not None:
             cached_result = cache.get_from_cache(self.messages)
             if cached_result:
-                logger.info(f"Found cached completion for prompt {self.task_id}")
+                # logger.info(f"Found cached completion for prompt {self.task_id}")
                 self.result.append(json.loads(cached_result[0]))
                 if pbar is not None:
                     pbar.update(1)
@@ -230,7 +230,12 @@ class APIRequest:
                 status_tracker.num_tasks_in_progress -= 1
                 status_tracker.num_tasks_succeeded += 1
                 if cache is not None:
-                    cache.set_to_cache(self.messages, json.dumps(response))
+                    # if json mode, don't cache if the JSON doesn't parse lol
+                    try:
+                        json.loads(response["choices"][0]["message"]["content"])
+                        cache.set_to_cache(self.messages, json.dumps(response))
+                    except Exception as e:
+                        logger.error(f"JSON didn't parse, not caching response.")
         except Exception as e:
             logger.log_to_file(f"{type(e).__name__}")
 
@@ -259,7 +264,7 @@ async def process_api_requests_from_list(
     """Processes API requests in parallel, throttling to stay under rate limits."""
     # constants
     seconds_to_pause_after_rate_limit_error = 15
-    seconds_to_sleep_each_loop = 0.01  # so concurrent tasks can run
+    seconds_to_sleep_each_loop = 0.003  # so concurrent tasks can run
 
     # initialize trackers
     queue_of_requests_to_retry = asyncio.Queue()

@@ -355,8 +355,9 @@ async def run_task(
 
     def cb(task_id: int, messages: list, result: str, status_tracker: StatusTracker, base_status: str, num_queries: int):
         num_finished = status_tracker.num_tasks_succeeded
-        new_status = base_status + f" ({num_finished}/{num_queries})"
-        status.update(new_status)
+        if status:
+            new_status = base_status + f" ({num_finished}/{num_queries})"
+            status.update(new_status)
 
     
     responses, usage = await run_chat_queries_async(
