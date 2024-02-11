@@ -79,7 +79,7 @@ class APIModel:
 
 tokenizer = tiktoken.encoding_for_model("gpt-3.5-turbo")
 GPT3_TURBO = APIModel(
-    name="gpt-3.5-turbo-1106",
+    name="gpt-3.5-turbo-0125",
     api_base="https://api.openai.com/v1",
     api_key_env_var="OPENAI_API_KEY",
     request_timeout=20,
